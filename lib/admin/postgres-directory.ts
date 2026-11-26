@@ -34,7 +34,7 @@ function account(row: Row, business: AdminBusiness): OperationAccount {
   return { accountId: text(row.account_id) || null, businessId: business.id, business: business.name, vertical: business.vertical, phone: text(row.display_phone) || null, displayName: text(row.display_name) || business.name, phoneNumberId: text(row.phone_number_id) || null, wabaId: text(row.waba_id) || null, metadataStatus: text(row.account_status) || undefined, status, quality: "Unknown", subscription: "Unknown", at: iso(row.account_updated_at) };
 }
 
-async function directoryRows(): Promise<Row[]> {
+async function directoryRows(businessId?: string): Promise<Row[]> {
   try {
     return await rows(postgresDb().execute(sql`
       select b.legacy_business_id, b.name, b.vertical, b.status,
@@ -48,6 +48,7 @@ async function directoryRows(): Promise<Row[]> {
       left join lateral (select count(*)::int as conversation_count from whatsapp_conversations c where c.messaging_business_id = b.id) c on true
       left join lateral (select count(*)::int as message_count from whatsapp_messages m where m.messaging_business_id = b.id) m on true
       left join lateral (select count(*)::int as template_count from whatsapp_templates t where t.messaging_business_id = b.id) t on true
+      ${businessId === undefined ? sql`` : sql`where b.legacy_business_id = ${businessId}`}
       order by b.name asc
     `));
   } catch (error) {
@@ -84,6 +85,13 @@ export async function listPostgresBusinesses(): Promise<BusinessListItem[]> {
     const business = profile(row);
     return business ? [{ ...business, catalogCount: 0, conversationCount: integer(row.conversation_count) }] : [];
   });
+}
+
+/** One business's WhatsApp account, read only for that business (never the whole directory). */
+export async function getPostgresBusinessAccount(businessId: string): Promise<OperationAccount | null> {
+  const row = (await directoryRows(businessId))[0];
+  const business = row ? profile(row) : null;
+  return row && business && business.id === businessId ? account(row, business) : null;
 }
 
 export type PostgresDirectoryOverview = {

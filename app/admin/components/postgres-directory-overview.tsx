@@ -22,7 +22,7 @@ export async function PostgresDirectoryOverview({ accountsOnly = false, business
         <div>
         <p className="mb-1 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Standalone Messaging database</p>
         <h1 className="text-2xl font-semibold tracking-tight">{accountsOnly ? "WhatsApp Accounts" : "Overview"}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{showConnectionCta && business ? `Connect and manage WhatsApp for ${business.name}.` : "Super Admin directory and account status are read from Postgres. Runtime messaging remains on Firestore."}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{showConnectionCta && business ? `Connect and manage WhatsApp for ${business.name}.` : "Directory and WhatsApp account status for every business."}</p>
         </div>
         {showConnectionCta && business && <WhatsAppAccountActions status={account?.status ?? "Not connected"} hasConfiguredPhone={!!account?.phoneNumberId} businessId={business.id} />}
       </div>

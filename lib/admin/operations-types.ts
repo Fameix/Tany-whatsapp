@@ -16,7 +16,7 @@ export type OperationSection = "overview" | (typeof operationSections)[number];
 export const operationLabels: Record<OperationSection, string> = {
   overview: "Overview",
   inbox: "Inbox",
-  contacts: "Contacts",
+  contacts: "Customers",
   templates: "Templates",
   campaigns: "Campaigns",
   automations: "Automations",

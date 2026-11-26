@@ -16,6 +16,8 @@ import {
   Activity,
   MessageCircle,
   Settings,
+  Home,
+  type LucideIcon,
 } from "lucide-react";
 import type { AdminBusiness } from "@/lib/admin/types";
 import { Button } from "@/components/ui/button";
@@ -52,10 +54,41 @@ import {
   CommandList,
 } from "@/components/ui/command";
 
-function linksFor(business?: AdminBusiness) {
-  const root = business
-    ? `/business/${encodeURIComponent(business.id)}`
-    : "/admin";
+type NavLink = { label: string; href: string; icon: LucideIcon; match?: string[] };
+
+/** Business workspaces get a customer-facing hierarchy; technical pages stay reachable
+ * from Settings → WhatsApp diagnostics and keep their existing URLs. */
+function businessNavigation(business: AdminBusiness): { primary: NavLink[]; secondary: NavLink[] } {
+  const root = `/business/${encodeURIComponent(business.id)}`;
+  return {
+    primary: [
+      { label: "Home", href: root, icon: Home },
+      { label: "Inbox", href: `${root}/inbox`, icon: Inbox },
+      { label: "Customers", href: `${root}/contacts`, icon: Users },
+      { label: "Automations", href: `${root}/automations`, icon: Workflow },
+      { label: "Campaigns", href: `${root}/campaigns`, icon: Megaphone },
+      { label: "Templates", href: `${root}/templates`, icon: FileText },
+    ],
+    secondary: [
+      { label: "WhatsApp", href: `${root}/whatsapp`, icon: MessageCircle, match: [`${root}/whatsapp/setup`, `${root}/whatsapp-accounts`] },
+      { label: "Settings", href: `${root}/settings`, icon: Settings, match: [`${root}/message-status`, `${root}/webhook-health`] },
+    ],
+  };
+}
+const businessPageLabels: Record<string, string> = {
+  "message-status": "Message status",
+  "webhook-health": "Webhook health",
+  "whatsapp-accounts": "WhatsApp account",
+  "whatsapp/setup": "Connect WhatsApp",
+};
+const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname);
+
+function linksFor(business?: AdminBusiness): NavLink[] {
+  if (business) {
+    const { primary, secondary } = businessNavigation(business);
+    return [...primary, ...secondary];
+  }
+  const root = "/admin";
   return [
     { label: "Overview", href: root, icon: LayoutDashboard },
     { label: "Inbox", href: `${root}/inbox`, icon: Inbox },
@@ -70,33 +103,37 @@ function linksFor(business?: AdminBusiness) {
     },
     { label: "Webhook Health", href: `${root}/webhook-health`, icon: Activity },
     { label: "WhatsApp Accounts", href: `${root}/whatsapp-accounts`, icon: MessageCircle },
-    ...(!business ? [{ label: "Setup Requests", href: `${root}/setup-requests`, icon: MessageCircle }] : []),
+    { label: "Setup Requests", href: `${root}/setup-requests`, icon: MessageCircle },
     { label: "Settings", href: `${root}/settings`, icon: Settings },
   ];
 }
-function Navigation({ business }: { business?: AdminBusiness }) {
+function Navigation({ links }: { links: NavLink[] }) {
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   return (
     <SidebarMenu>
-      {linksFor(business).map(({ label, href, icon: Icon }) => (
+      {links.map((link) => {
+        const { label, href, icon: Icon } = link;
+        const active = isActive(pathname, link);
+        return (
         <SidebarMenuItem key={href}>
           <SidebarMenuButton
             asChild
-            isActive={pathname === href}
+            isActive={active}
             className="h-9 font-medium"
           >
             <Link
               href={href}
               onClick={() => setOpenMobile(false)}
-              aria-current={pathname === href ? "page" : undefined}
+              aria-current={active ? "page" : undefined}
             >
               <Icon />
               <span>{label}</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
-      ))}
+        );
+      })}
     </SidebarMenu>
   );
 }
@@ -107,24 +144,35 @@ function WorkspaceSidebar({
   business?: AdminBusiness;
   workspaceSwitcher: React.ReactNode;
 }) {
+  const loading = <div className="h-9 animate-pulse rounded-md bg-muted" />;
+  const groups = business ? businessNavigation(business) : null;
   return (
     <Sidebar collapsible="offcanvas">
       <div className="border-b p-2">{workspaceSwitcher}</div>
       <SidebarContent>
-        <SidebarGroup className="px-2">
-          <SidebarGroupLabel className="px-2 text-[11px]">
-            Products
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <Suspense
-              fallback={
-                <div className="h-9 animate-pulse rounded-md bg-muted" />
-              }
-            >
-              <Navigation business={business} />
-            </Suspense>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {groups ? (
+          <>
+            <SidebarGroup className="px-2 pt-4">
+              <SidebarGroupContent>
+                <Suspense fallback={loading}><Navigation links={groups.primary} /></Suspense>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarGroup className="mt-auto px-2 pb-4">
+              <SidebarGroupContent>
+                <Suspense fallback={loading}><Navigation links={groups.secondary} /></Suspense>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        ) : (
+          <SidebarGroup className="px-2">
+            <SidebarGroupLabel className="px-2 text-[11px]">
+              Products
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <Suspense fallback={loading}><Navigation links={linksFor()} /></Suspense>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarRail />
@@ -134,9 +182,11 @@ function WorkspaceSidebar({
 function Breadcrumb({ business }: { business?: AdminBusiness }) {
   const pathname = usePathname();
   const links = linksFor(business);
+  const root = links[0].href;
   const current =
     links.find((entry) => entry.href === pathname)?.label ??
-    (pathname.endsWith("/new") ? "New business" : "Business profile");
+    (business ? businessPageLabels[pathname.slice(root.length + 1)] : undefined) ??
+    (pathname.endsWith("/new") ? "New business" : business ? "Workspace" : "Business profile");
   return (
     <nav
       aria-label="Breadcrumb"
@@ -231,12 +281,14 @@ export function AdminShell({
                   Ctrl K
                 </kbd>
               </Button>
-              <Badge
-                variant="secondary"
-                className="hidden rounded-md text-[10px] font-normal sm:inline-flex"
-              >
-                {business ? "Business" : "Super Admin"}
-              </Badge>
+              {!business && (
+                <Badge
+                  variant="secondary"
+                  className="hidden rounded-md text-[10px] font-normal sm:inline-flex"
+                >
+                  Super Admin
+                </Badge>
+              )}
             </div>
           </header>
           <div

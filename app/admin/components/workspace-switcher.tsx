@@ -29,7 +29,8 @@ export async function WorkspaceSwitcher({
       console.info("[WORKSPACE_SWITCHER_PROFILES_START]", {
         businessId: business?.id ?? null,
       });
-    const profiles = await listBusinessProfiles();
+    // A business session may only ever see its own workspace; the directory is Super Admin only.
+    const profiles = access === "admin" ? await listBusinessProfiles() : business ? [business] : [];
     options = profiles
       // Active workspaces remain accessible while their Meta connection is being set up.
       .filter((profile) => profile.active && isActiveTanyVertical(profile.vertical))

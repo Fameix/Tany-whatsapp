@@ -14,21 +14,27 @@ import { listCatalog } from "@/lib/admin/services";
 import { CatalogPanel } from "@/app/admin/components/catalog-panel";
 import { BusinessForm } from "@/app/admin/components/business-form";
 import { LoadingPanel } from "@/app/admin/components/shared";
+import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
+import { canViewBusiness } from "@/app/business/_components/business-access";
 
-async function Section({
-  params,
-}: {
+type SectionProps = {
   params: Promise<{ businessId: string; section: string }>;
-}) {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+async function Section({ params, searchParams }: SectionProps) {
   await connection();
   const { businessId, section } = await params;
+  const conversation = (await searchParams).conversation;
   if (operationSections.some((value) => value === section)) {
+    if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;
     await loadBusiness(businessId);
     return (
       <OperationsPage
         businessId={businessId}
         section={section as (typeof operationSections)[number]}
-        clientFacing={section === "whatsapp-accounts"}
+        clientFacing={false}
+        conversationId={section === "inbox" && typeof conversation === "string" ? conversation : undefined}
       />
     );
   }
@@ -74,9 +80,7 @@ async function Section({
     </div>
   );
 }
-export default function BusinessSection(props: {
-  params: Promise<{ businessId: string; section: string }>;
-}) {
+export default function BusinessSection(props: SectionProps) {
   return (
     <Suspense fallback={<LoadingPanel />}>
       <Section {...props} />

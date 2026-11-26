@@ -76,6 +76,20 @@ import { updateOperations } from "../operations-actions";
 import { previewWhatsAppTest } from "@/app/business/[businessId]/whatsapp/actions";
 import { WhatsAppAccountActions } from "@/app/dashboard/messaging/_components/whatsapp-account-actions";
 
+const businessSectionDescriptions: Record<OperationSection, string> = {
+  overview: "Your WhatsApp activity at a glance",
+  inbox: "Reply to customers on WhatsApp",
+  contacts: "People who have messaged your business",
+  templates: "Approved message templates for WhatsApp",
+  campaigns: "Send messages to groups of customers",
+  automations: "Reply to customers automatically",
+  "message-status": "Delivery status of recent messages",
+  "webhook-health": "Whether WhatsApp messages are reaching Tany",
+  "whatsapp-accounts": "Your connected WhatsApp number",
+  "setup-requests": "WhatsApp setup requests",
+  settings: "Messaging preferences for your business",
+};
+
 function date(value: string | null) {
   return value
     ? new Intl.DateTimeFormat("en-IN", {
@@ -166,9 +180,12 @@ function Notice({ children }: { children: React.ReactNode }) {
 export function OperationsPanel({
   data: initialData,
   section,
+  initialConversationId,
 }: {
   data: OperationsData;
   section: OperationSection;
+  /** Opens a specific conversation, e.g. from Home's "Open conversation". */
+  initialConversationId?: string;
 }) {
   const [data, setData] = useState(initialData);
   const [snapshot, setSnapshot] = useState(initialData);
@@ -184,7 +201,7 @@ export function OperationsPanel({
   const [filter, setFilter] = useState("all");
   const [businessFilter, setBusinessFilter] = useState("all");
   const [selected, setSelected] = useState<OperationConversation | null>(
-    data.conversations[0] ?? null,
+    data.conversations.find((conversation) => conversation.id === initialConversationId) ?? data.conversations[0] ?? null,
   );
   const [draft, setDraft] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -408,23 +425,26 @@ export function OperationsPanel({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-            WhatsApp operations
-          </div>
+          {!data.businessId && (
+            <div className="mb-1 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              WhatsApp operations
+            </div>
+          )}
           <h1 className="text-2xl font-semibold tracking-tight">
             {operationLabels[section]}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {data.businessName} <span aria-hidden="true">·</span>{" "}
-            {section === "overview"
-              ? "Messaging activity at a glance"
-              : "Manage WhatsApp messaging"}
+            {data.businessId
+              ? businessSectionDescriptions[section]
+              : <>{data.businessName} <span aria-hidden="true">·</span>{" "}{section === "overview" ? "Messaging activity at a glance" : "Manage WhatsApp messaging"}</>}
           </p>
         </div>
-        <Badge variant="outline" className="gap-1.5">
-          <ShieldCheck className="size-3" />
-          {data.businessId ? "Business scope" : "Super Admin"}
-        </Badge>
+        {!data.businessId && (
+          <Badge variant="outline" className="gap-1.5">
+            <ShieldCheck className="size-3" />
+            Super Admin
+          </Badge>
+        )}
       </div>
       {feedback && (
         <div role="status" className="rounded-md border bg-muted p-3 text-sm">
