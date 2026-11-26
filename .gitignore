@@ -47,3 +47,7 @@ next-env.d.ts
 
 # local HTTPS dev certificates
 /certificates
+
+# local test run logs and generated knowledge graph
+/.*-tests.log
+/graphify-out/

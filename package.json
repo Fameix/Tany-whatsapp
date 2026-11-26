@@ -34,12 +34,12 @@
     "build:vinext": "vite build",
     "start:vinext": "vite preview",
     "deploy:vinext": "vinext-cloudflare deploy",
-    "deploy:response-store": "cf deploy --prebuilt --mode production --worker tany-messaging-response-store",
     "test:whatsapp-onboarding-ui": "node --import tsx --conditions=react-server scripts/test-whatsapp-onboarding-ui.cjs",
     "test:business-whatsapp-setup-route": "node scripts/test-business-whatsapp-setup-route.cjs",
     "dev:https": "node scripts/start-dev.cjs --https",
     "dev:https:trust": "node scripts/start-dev.cjs --https --trust",
-    "test:whatsapp-disconnect-action": "node scripts/test-whatsapp-disconnect-action.cjs"
+    "test:whatsapp-disconnect-action": "node scripts/test-whatsapp-disconnect-action.cjs",
+    "test:cloudflare-build-config": "node --import tsx scripts/test-cloudflare-build-config.cjs"
   },
   "dependencies": {
     "@cloudflare/workers-response-store": "^1.1.3",
