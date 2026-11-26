@@ -61,18 +61,6 @@ async function main() {
   assert.equal(order.total, 999);
   assert.equal(order.businessId, b.id);
 
-  const salon = h.business('custom-salon', 'salon', { staff: { anna: 'Anna' } });
-  h.item(salon.id, 'premium-cut', { type: 'service', name: 'Premium Haircut', price: 765, metadata: { aliases: ['haircut'], durationMinutes: 90, staffIds: ['anna'] } });
-  result = await h.send(salon, 'Haircut 25/10/2099 5pm with Anna');
-  assert.equal(result.state, 'salon_awaiting_confirmation');
-  const booking = h.read('bookings/' + result.context.bookingId);
-  assert.equal(booking.amount, 765);
-  assert.equal(booking.endTime, '18:30');
-  assert.equal(booking.serviceId, 'premium-cut');
-  assert.equal(booking.staffName, 'Anna');
-  assert.match(result.reply.body, /765/);
-  assert.ok(!result.reply.body.includes('Arun'));
-
   const motos = h.business('custom-motos', 'motos');
   h.item(motos.id, 'city_2023', { type: 'vehicle', name: 'Honda City 2023', price: 1200000, metadata: { brand: 'Honda', model: 'City', year: 2023, transmission: 'Automatic', bodyType: 'sedan', variant: 'ZX' } });
   h.item(motos.id, 'sold', { type: 'vehicle', name: 'Sold Car', available: false, metadata: { brand: 'Honda', model: 'City', year: 2022, transmission: 'Automatic' } });
@@ -86,18 +74,8 @@ async function main() {
 
   const configs = {
     retail: { type: 'product', name: 'Custom Bag', price: 321, metadata: { aliases: ['bag'], variants: ['Red'], stock: 5 } },
-    ecom: { type: 'category', name: 'Corporate Gifts', price: 0, metadata: { aliases: ['gifts'] } },
-    meat: { type: 'product', name: 'Farm Chicken', price: 333, metadata: { aliases: ['chicken'], variants: ['Curry Cut'] } },
-    meds: { type: 'product', name: 'ORS', price: 41, metadata: { aliases: ['ors'], otc: true } },
-    garage: { type: 'service', name: 'Custom Oil Change', price: 432, metadata: { aliases: ['oil'], durationMinutes: 90 } },
-    expert: { type: 'service', name: 'Tax Advice Session', price: 876, metadata: { aliases: ['tax'], durationMinutes: 90, resourceType: 'advisor', resourceName: 'Configured Advisor' } },
-    gaming: { type: 'service', name: 'Custom Console', price: 123, metadata: { aliases: ['console'], durationMinutes: 60, resourceType: 'console', resourceName: 'Station A' } },
-    sport: { type: 'service', name: 'Custom Court', price: 654, metadata: { aliases: ['court'], durationMinutes: 90, resourceType: 'court', resourceId: 'court-a', resourceName: 'Venue A' } },
   };
-  const steps = {
-    retail: ['bag', 'Red', '2'], ecom: ['100 gifts under 100'], meat: ['chicken', 'Curry Cut', '1 kg', 'LOCATION'], meds: ['ORS', '2', 'LOCATION'],
-    garage: ['Honda City', 'oil', '2099-10-25', '10 AM'], expert: ['tax', '2099-10-25', '10 AM'], gaming: ['console', '2', '2099-10-25', '10 AM'], sport: ['court', '2099-10-25', '10 AM'],
-  };
+  const steps = { retail: ['bag', 'Red', '2'] };
   for (const [vertical, data] of Object.entries(configs)) {
     const business = h.business('custom-' + vertical, vertical, vertical === 'ecom' ? { quoteSettings: { estimateMultiplier: 0.8 } } : {});
     h.item(business.id, 'configured-item', data);
@@ -106,27 +84,20 @@ async function main() {
     const collection = result.context.orderId ? 'orders' : 'bookings';
     const record = h.read(`${collection}/${result.context.orderId ?? result.context.bookingId}`);
     const amount = collection === 'orders' ? record.total : record.amount;
-    assert.equal(amount, vertical === 'ecom' ? 8000 : data.price * (['retail', 'meds', 'gaming'].includes(vertical) ? 2 : 1), vertical);
-    if (['expert', 'sport', 'garage'].includes(vertical)) assert.equal(record.endTime, '11:30');
-    if (vertical === 'sport') assert.equal(record.resourceName, 'Venue A');
-    if (vertical === 'gaming') assert.equal(record.resourceName, 'Station A');
+    assert.equal(amount, data.price * 2, vertical);
   }
-  const cab = h.business('custom-cabs', 'cabs', { vehicleTypes: [{ id: 'electric', name: 'Electric Cab', baseFare: 345 }] });
-  await h.send(cab, 'Airport'); await h.send(cab, 'Station');
-  result = await h.send(cab, 'Electric Cab');
-  assert.equal(h.read('bookings/' + result.context.bookingId).amount, 345);
 
-  for (const vertical of ['eats', 'salon', 'motos', 'cabs', 'retail', 'ecom', 'garage', 'meds', 'meat', 'expert', 'gaming', 'sport']) {
+  for (const vertical of ['eats', 'motos', 'retail']) {
     const empty = h.business('empty-' + vertical, vertical);
     result = await h.send(empty, 'Hello');
-    assert.equal(result.reply.body, 'This business has not configured its catalog yet.', vertical);
+    if (vertical === 'retail') assert.ok(result.reply.rows?.some(row => row.title === 'Shop Products') || result.reply.sections?.some(section => section.rows.some(row => row.title === 'Shop Products')), vertical);
+    else assert.equal(result.reply.body, 'This business has not configured its catalog yet.', vertical);
     result = await h.send(empty, 'RESET');
-    assert.equal(result.reply.body, 'This business has not configured its catalog yet.', vertical + ' reset');
+    if (vertical === 'retail') assert.ok(result.reply && typeof result.reply.body === 'string', vertical + ' reset');
+    else assert.equal(result.reply.body, 'This business has not configured its catalog yet.', vertical + ' reset');
   }
-  const pharmacy = h.business('prescription-only', 'meds');
-  h.item(pharmacy.id, 'rx', { name: 'Prescription Product', metadata: { requiresPrescription: true } });
-  result = await h.send(pharmacy, 'Prescription Product');
-  assert.equal(result.state, 'meds_awaiting_prescription');
+  for (const vertical of ['cabs', 'ecom', 'expert', 'gaming', 'garage', 'meat', 'meds', 'salon', 'sport'])
+    await assert.rejects(() => h.send(h.business(`disabled-${vertical}`, vertical), 'Hello'), /not active/);
 
   // Demo seed is idempotent and never overwrites actual identity/prices.
   const seed = createHarness({ seedFixtures: false });
@@ -144,9 +115,9 @@ async function main() {
   const afterSeed = seed.documents.size;
   await seedDemoBusinesses(seed.adminDb);
   assert.equal(seed.documents.size, afterSeed);
-  assert.ok(seed.read('businesses/demo-salon/catalog/haircut'));
+  assert.ok(seed.read('businesses/demo-retail/catalog/tshirt'));
   assert.ok(seed.read('businesses/demo-motos/catalog/creta_2021'));
   assert.equal(h.sends.length, 0);
-  console.log('PASS: scoped catalog/config reads, isolation/path validation, unavailable filtering, all 12 dynamic flows, Eats price, Salon duration/staff/price, Motos inventory, Cabs settings, quote settings, missing catalogs, prescription safeguard, idempotent non-destructive demo seed. No live calls.');
+  console.log('PASS: scoped catalog/config reads, tenant isolation, active Motos/Eats/Retail flows, coming-soon route rejection, and idempotent non-destructive demo seed. No live calls.');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

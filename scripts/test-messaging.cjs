@@ -4,7 +4,6 @@ const { NextRequest } = require('next/server');
 const { signedWebhookHeaders, createHarness, dummyPayload, demoBusiness } = require('./messaging-test-helpers.cjs');
 
 const eatsWelcome = 'Welcome to Tany Eats! What would you like to order?\nChicken Biriyani ₹180\nMutton Biriyani ₹250\nDosa ₹60\nIdli ₹40';
-const salonWelcome = 'Sure. Which service would you like?\nHaircut, Beard Trim, Haircut + Beard, Hair Spa, or Facial.';
 const motosWelcome = 'What car are you looking for? You can type model, automatic/manual, or budget.';
 const batchFirst = { cabs: 'pickup', retail: 'product', ecom: 'category', garage: 'vehicle', meds: 'product', meat: 'item', expert: 'service', gaming: 'station', sport: 'activity' };
 const initialState = (vertical) => batchFirst[vertical] ? `${vertical}_awaiting_${batchFirst[vertical]}` : vertical === 'eats' ? 'eats_start' : vertical === 'salon' ? 'salon_awaiting_service' : vertical === 'motos' ? 'motos_awaiting_query' : vertical + '_start';
@@ -16,17 +15,18 @@ async function main() {
   const { verticalConfig, isTanyVertical } = h.load('lib/messaging/vertical-config.ts');
   const verticals = ['motos', 'eats', 'cabs', 'ecom', 'expert', 'gaming', 'garage', 'meat', 'meds', 'retail', 'salon', 'sport'];
   assert.deepEqual(Object.keys(verticalConfig), verticals);
-  for (const vertical of verticals) {
+  for (const vertical of ['motos', 'eats', 'retail']) {
     const result = await routeMessage({ ...demoBusiness, id: 'demo-' + vertical, vertical }, 'hello');
     assert.equal(result.vertical, vertical);
     assert.equal(result.state, initialState(vertical));
     assert.equal(result.originalText, 'hello');
-    if (batchFirst[vertical]) assert.ok(result.reply.body.length > 0);
-    else assert.equal(result.reply.body, vertical === 'eats' ? eatsWelcome : vertical === 'salon' ? salonWelcome : vertical === 'motos' ? motosWelcome : verticalConfig[vertical].defaultReply + ': hello');
+    if (vertical === 'eats') assert.equal(result.reply.body, eatsWelcome);
+    else if (vertical === 'motos') assert.equal(result.reply.body, motosWelcome);
+    else assert.ok(result.reply.body.length > 0);
   }
   for (const invalid of ['unknown', '__proto__', 'constructor', null, 12]) assert.equal(isTanyVertical(invalid), false);
-  await assert.rejects(routeMessage({ id: 'invalid', vertical: 'unknown' }, 'hello'), /Unsupported Tany vertical/);
-  for (const vertical of ['eats', 'motos', 'salon']) {
+  await assert.rejects(routeMessage({ id: 'invalid', vertical: 'unknown' }, 'hello'), /not active for business/);
+  for (const vertical of ['eats', 'motos']) {
     const handler = h.load(`lib/messaging/flows/${vertical}.ts`);
     assert.equal((await handler[`handle${vertical[0].toUpperCase() + vertical.slice(1)}Message`]('hello', { business: { ...demoBusiness, id: 'demo-' + vertical, vertical } })).state, initialState(vertical));
   }
@@ -124,7 +124,7 @@ async function main() {
   assert.equal((await (await post(dummyPayload())).json()).skipped, 'business_not_found');
   h.seed('businesses/demo-eats', { ...demoBusiness, vertical: 'unknown' });
   const { findBusinessByPhoneNumberId } = h.load('lib/messaging/business.ts');
-  await assert.rejects(findBusinessByPhoneNumberId('TEST_PHONE_NUMBER_ID'), /Unsupported Tany vertical/);
-  console.log('PASS: all 12 verticals; legacy imports; GET verification; demo-eats POST; message/customer/conversation saves; sequential/concurrent/legacy duplicates; send failure/retry; stored reply deduplication; WhatsApp location; skipped events. No live Meta/Firebase calls.');
+  await assert.rejects(findBusinessByPhoneNumberId('TEST_PHONE_NUMBER_ID'), /not active for business/);
+  console.log('PASS: 12 registered verticals; active Retail/Eats/Motos routing; legacy imports; GET verification; demo-eats POST; message/customer/conversation saves; sequential/concurrent/legacy duplicates; send failure/retry; stored reply deduplication; WhatsApp location; skipped events. No live Meta/Firebase calls.');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

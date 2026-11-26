@@ -65,7 +65,7 @@ export function WhatsAppSetupWizard({ businessId, initial }: { businessId: strin
             ["displayName", setupType === "new" ? "Desired display name" : "Display name", account?.displayName ?? "", 120],
             ["displayPhone", "Phone number (with country code)", account?.displayPhone ?? "", 30],
             ...(setupType === "new" ? [["businessName", "Business name", account?.businessName ?? "", 120]] : [
-              ["phoneNumberId", "Phone Number ID", account?.phoneNumberId ?? "", 40], ["wabaId", "WABA ID", account?.wabaId ?? "", 40], ["tokenSecretName", "Token secret name", account?.tokenSecretName ?? "", 101],
+              ["phoneNumberId", "Phone Number ID", account?.phoneNumberId ?? "", 40], ["wabaId", "WABA ID", account?.wabaId ?? "", 40], ["tokenSecretName", "Token Secret Name (Secret Reference)", account?.tokenSecretName ?? "", 101],
             ]),
           ].map(([name, label, value, max]) => <div key={String(name)} className="space-y-2"><Label htmlFor={String(name)}>{label}</Label><Input className="h-11" id={String(name)} name={String(name)} defaultValue={String(value)} maxLength={Number(max)} type={name === 'displayPhone' ? 'tel' : 'text'} required disabled={pending} /></div>)}
           {setupType === "existing" && <p className="text-xs leading-5 text-muted-foreground">Use the name of a server-managed secret. Never paste the access token itself.</p>}

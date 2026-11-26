@@ -1,5 +1,5 @@
 import { mergeConversationContext } from "@/lib/messaging/context";
-import { isTanyVertical } from "@/lib/messaging/vertical-config";
+import { activeTanyVerticals, isActiveTanyVertical, isTanyVertical } from "@/lib/messaging/vertical-config";
 import type { ConversationContext } from "@/lib/messaging/domain-types";
 
 export class AdminValidationError extends Error {
@@ -29,12 +29,18 @@ export function jsonInput(value: unknown, field: string): ConversationContext {
   } catch { throw new AdminValidationError({ [field]: "Use a valid JSON object, up to 32 KB, without unsafe keys." }); }
 }
 export function businessInput(value: unknown, creating: boolean) {
-  const data = objectInput(value, ["name", "vertical", "whatsappPhoneNumberId", "active", "settings", ...(creating ? ["businessId"] : [])]);
+  const data = objectInput(value, ["name", "vertical", "whatsappPhoneNumberId", "active", "settings", "products", ...(creating ? ["businessId"] : [])]);
   const name = stringInput(data.name, "name", 120);
   if (!isTanyVertical(data.vertical)) throw new AdminValidationError({ vertical: "Choose one of the 12 Tany verticals." });
+  if (!isActiveTanyVertical(data.vertical)) throw new AdminValidationError({ vertical: "This Tany product is coming soon and cannot be configured yet." });
   const phone = stringInput(data.whatsappPhoneNumberId, "whatsappPhoneNumberId", 100);
   if (!/^[A-Za-z0-9_-]+$/.test(phone)) throw new AdminValidationError({ whatsappPhoneNumberId: "Use the phone number ID, with no spaces or slashes." });
   const active = booleanInput(data.active, "active");
+  let products: string[] | undefined;
+  if (data.products !== undefined) {
+    if (!Array.isArray(data.products) || data.products.some(product => typeof product !== "string" || !(activeTanyVerticals as readonly string[]).includes(product))) throw new AdminValidationError({ products: "Choose only active Tany products." });
+    products = [...new Set(data.products)];
+  }
   const settings = jsonInput(data.settings ?? {}, "settings");
   if (settings.staff !== undefined && (!settings.staff || typeof settings.staff !== "object" || Array.isArray(settings.staff) || Object.values(settings.staff).some((name) => typeof name !== "string" || !name.trim()))) throw new AdminValidationError({ settings: "staff must map staff IDs to names." });
   if (settings.vehicleTypes !== undefined) {
@@ -58,7 +64,7 @@ export function businessInput(value: unknown, creating: boolean) {
     businessId = stringInput(data.businessId, "businessId", 80);
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(businessId)) throw new AdminValidationError({ businessId: "Use lowercase letters, numbers and single hyphens." });
   }
-  return { businessId, name, vertical: data.vertical, whatsappPhoneNumberId: phone, active, settings };
+  return { businessId, name, vertical: data.vertical, whatsappPhoneNumberId: phone, active, settings, ...(products === undefined ? {} : { products }) };
 }
 export function catalogInput(value: unknown) {
   const data = objectInput(value, ["name", "type", "category", "description", "price", "available", "metadata"]);

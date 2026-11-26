@@ -28,6 +28,7 @@ async function Section({
       <OperationsPage
         businessId={businessId}
         section={section as (typeof operationSections)[number]}
+        clientFacing={section === "whatsapp-accounts"}
       />
     );
   }

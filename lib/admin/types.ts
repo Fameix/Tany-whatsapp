@@ -9,7 +9,7 @@ export type AdminBusiness = {
   whatsappPhoneNumberId: string;
   settings: ConversationContext;
 };
-export type BusinessListItem = AdminBusiness & { catalogCount: number };
+export type BusinessListItem = AdminBusiness & { catalogCount: number; conversationCount?: number };
 export type BusinessStats = {
   catalog: number;
   conversations: number;

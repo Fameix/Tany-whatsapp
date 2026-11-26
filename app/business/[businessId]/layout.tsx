@@ -6,6 +6,11 @@ import { WorkspaceSwitcherLoading } from "@/app/admin/components/workspace-menu"
 import { AdminShell } from "@/app/admin/components/admin-shell";
 import { LoadingPanel } from "@/app/admin/components/shared";
 import { loadBusiness } from "@/app/business/_components/load-business";
+import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
+import {
+  DashboardAuthorizationError,
+  requireDashboardAccess,
+} from "@/lib/admin/dashboard-session";
 import "@/app/admin/admin.css";
 
 export const metadata: Metadata = { title: "Tany WhatsApp Operations" };
@@ -23,6 +28,13 @@ async function WorkspaceLayout({
 }) {
   await connection();
   const { businessId } = await params;
+  try {
+    await requireDashboardAccess(businessId);
+  } catch (error) {
+    if (error instanceof DashboardAuthorizationError)
+      return <DashboardAccessRequired />;
+    throw error;
+  }
   workspaceLog("[WORKSPACE_LOAD_START]", { businessId });
   const business = await loadBusiness(businessId);
   workspaceLog("[WORKSPACE_BUSINESS_LOADED]", {

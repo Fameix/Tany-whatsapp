@@ -12,6 +12,13 @@ import { sendingAccessToken } from "@/lib/whatsapp/runtime-account";
 import { hasEntitlement } from "@/lib/subscriptions/entitlements";
 import { automationAccountReady } from "@/lib/whatsapp/runtime-account";
 import { eventKey } from "@/lib/automations/events";
+import { postgresShadowWrite } from "@/lib/data/repository";
+import { automationPersistence } from "@/lib/automations/persistence";
+import { getBusinessConfig } from "@/lib/messaging/services/business-config-service";
+import { resolveWhatsAppIdentity } from "@/lib/messaging/services/identity-service";
+import { getRuntimeRecordById, listRuntimeRecords, mutateRuntimeRecordById, postgresRuntimeMode, putRuntimeRecord } from "@/lib/messaging/services/postgres-runtime-records";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
+import type { TenantRow } from "@/lib/data/types";
 import {
   validateAutomation,
   type AutomationEvent,
@@ -22,7 +29,9 @@ import {
 import type { MessagingReply } from "@/lib/messaging/types";
 type Data = Record<string, unknown>;
 const millis = (value: unknown): number =>
-  value instanceof Timestamp
+  value instanceof Date
+    ? value.getTime()
+    : value instanceof Timestamp
     ? value.toMillis()
     : typeof value === "string"
       ? Date.parse(value)
@@ -36,7 +45,14 @@ async function scoped(
   phone?: string,
 ): Promise<Data> {
   if (!id) return {};
-  const value = (
+  if (collection === "templates") {
+    const value = await automationPersistence().get("templates", businessId, documentId(id));
+    if (!value) throw new Error("Context unavailable");
+    return value;
+  }
+  const value = postgresRuntimeMode()
+    ? await getRuntimeRecordById<TenantRow>(collection, documentId(id))
+    : (
     await adminDb.collection(collection).doc(documentId(id)).get()
   ).data();
   if (
@@ -147,16 +163,20 @@ async function contextFor(event: AutomationEvent) {
           ? booking.paymentId
           : undefined;
   const payment = await scoped("payments", paymentId, event.businessId, phone);
-  const previous = await adminDb
+  const previous = postgresRuntimeMode()
+    ? await listRuntimeRecords<TenantRow>("orders", event.businessId)
+    : (await adminDb
     .collection("orders")
     .where("businessId", "==", event.businessId)
     .where("customerPhone", "==", phone)
-    .get();
-  const bookings = await adminDb
+    .get()).docs.map(doc => ({ ...doc.data(), id: doc.id, businessId: event.businessId } as TenantRow));
+  const bookings = postgresRuntimeMode()
+    ? await listRuntimeRecords<TenantRow>("bookings", event.businessId)
+    : (await adminDb
     .collection("bookings")
     .where("businessId", "==", event.businessId)
     .where("customerPhone", "==", phone)
-    .get();
+    .get()).docs.map(doc => ({ ...doc.data(), id: doc.id, businessId: event.businessId } as TenantRow));
   return {
     customer,
     conversation,
@@ -168,8 +188,8 @@ async function contextFor(event: AutomationEvent) {
       timestamp: event.timestamp,
       text: String(event.payload.text ?? ""),
       customerType:
-        previous.docs.some((d) => d.id !== event.entityId) ||
-        bookings.docs.some((d) => d.id !== event.entityId)
+      previous.some((d) => d.id !== event.entityId && d.customerPhone === phone) ||
+        bookings.some((d) => d.id !== event.entityId && d.customerPhone === phone)
           ? "returning"
           : "new",
       tags: Array.isArray(customer.tags) ? (customer.tags as string[]) : [],
@@ -199,16 +219,11 @@ async function assertReady(event: AutomationEvent, phone: string) {
     ))
   )
     throw new Error("Messaging unavailable");
-  const identity = (
-    await adminDb.collection("whatsapp_identities").doc(phone).get()
-  ).data();
-  if (!identity?.linked) throw new Error("Identity is not linked");
+  if (!await resolveWhatsAppIdentity(phone)) throw new Error("Identity is not linked");
   return business;
 }
 async function scopedBusiness(id: string) {
-  const value = (
-    await adminDb.collection("businesses").doc(documentId(id)).get()
-  ).data();
+  const value = await getBusinessConfig(documentId(id));
   if (!value?.active) throw new Error("Business unavailable");
   return value;
 }
@@ -245,9 +260,8 @@ async function sendAction(
       "Resolved template parameter exceeds WhatsApp length limit",
     );
 
-  const messageRef = adminDb
-    .collection("messages")
-    .doc(`automation_${runId}_${index}`);
+  const messageId = `automation_${runId}_${index}`;
+  const messageRef = postgresRuntimeMode() ? null : adminDb.collection("messages").doc(messageId);
   // The run claim ensures only one worker can reach this external side effect.
   let reply: MessagingReply = { type: "text", body: action.text ?? "" };
   const choiceId = (n: number) => `auto:${runId.slice(0, 16)}:${index}:${n}`;
@@ -362,16 +376,12 @@ async function sendAction(
         : {}),
     };
   } else {
-    const incoming = await adminDb
-      .collection("messages")
-      .where("businessId", "==", event.businessId)
-      .where("customerPhone", "==", context.phone)
-      .where("direction", "==", "incoming")
-      .get();
+    const incoming = postgresRuntimeMode()
+      ? (await new PostgresMessagingRepository().listRuntimeMessages(event.businessId)).filter(row => row.customerPhone === context.phone && row.direction === "incoming")
+      : (await adminDb.collection("messages").where("businessId", "==", event.businessId).where("customerPhone", "==", context.phone).where("direction", "==", "incoming").get()).docs.map(doc => doc.data());
     const last = Math.max(
       0,
-      ...incoming.docs.map((d) => {
-        const v = d.data();
+      ...incoming.map((v) => {
         return /^\d{10}$/.test(v.whatsappTimestamp ?? "")
           ? Number(v.whatsappTimestamp) * 1000
           : millis(v.createdAt);
@@ -382,7 +392,8 @@ async function sendAction(
         "An approved template is required outside the reply window",
       );
   }
-  await messageRef.create({
+  const messageData = {
+    id: messageId,
     businessId: event.businessId,
     customerPhone: context.phone,
     conversationId: event.conversationId ?? "",
@@ -394,8 +405,10 @@ async function sendAction(
     automationRunId: runId,
     deliveryStatus: "sending",
     processingStatus: "received",
-    createdAt: serverTimestamp(),
-  });
+    createdAt: postgresRuntimeMode() ? new Date() : serverTimestamp(),
+  } as TenantRow;
+  if (postgresRuntimeMode()) await putRuntimeRecord("messages", messageData);
+  else { const { id: storedMessageId, ...payload } = messageData; void storedMessageId; await messageRef!.create(payload); }
   try {
     if (
       event.conversationId &&
@@ -442,36 +455,15 @@ async function sendAction(
       });
     if (!result?.messages?.[0]?.id) throw new Error("No provider receipt");
     await onSent();
-    await messageRef.update({
-      messageId: result.messages[0].id,
-      deliveryStatus: "sent",
-      processingStatus: "processed",
-      updatedAt: serverTimestamp(),
-    });
+    if (postgresRuntimeMode()) await mutateRuntimeRecordById<TenantRow>("messages", messageId, current => ({ ...current, messageId: result.messages[0].id, deliveryStatus: "sent", processingStatus: "processed", updatedAt: new Date() }));
+    else await messageRef!.update({ messageId: result.messages[0].id, deliveryStatus: "sent", processingStatus: "processed", updatedAt: serverTimestamp() });
   } catch {
-    await messageRef.update({
-      deliveryStatus: "failed",
-      processingStatus: "failed",
-      updatedAt: serverTimestamp(),
-    });
+    if (postgresRuntimeMode()) await mutateRuntimeRecordById<TenantRow>("messages", messageId, current => ({ ...current, deliveryStatus: "failed", processingStatus: "failed", updatedAt: new Date() }));
+    else await messageRef!.update({ deliveryStatus: "failed", processingStatus: "failed", updatedAt: serverTimestamp() });
     throw new Error("Send could not be confirmed; manual review required");
   }
 }
 export type AutomationResult = { handled: boolean; terminal: boolean; messageSent: boolean; actionCount: number };
-
-async function recordedOutcome(runId: string): Promise<AutomationResult> {
-  const run = (await adminDb.collection("automation_runs").doc(runId).get()).data();
-  // Older runs have no effect flags. Only a confirmed outgoing receipt or an
-  // actual handoff is evidence of a terminal outcome, never the run status.
-  const messages = await adminDb.collection("messages").where("automationRunId", "==", runId).get();
-  const messageSent = run?.messageSent === true || messages.docs.some(doc => doc.data().businessId === run?.businessId && !!doc.data().messageId && ["sent", "delivered", "read"].includes(doc.data().deliveryStatus));
-  let handedOff = false;
-  if (run?.event?.conversationId) {
-    const conversation = (await adminDb.collection("conversations").doc(documentId(run.event.conversationId)).get()).data();
-    handedOff = conversation?.businessId === run.businessId && conversation?.status === "handed_off";
-  }
-  return { handled: !!run && run.status !== "skipped", terminal: run?.terminal === true || messageSent || handedOff, messageSent, actionCount: Number(run?.actionsExecuted) || 0 };
-}
 
 export async function runAutomationEvent(
   event: AutomationEvent,
@@ -483,40 +475,32 @@ export async function runAutomationEvent(
     !Number.isFinite(Date.parse(event.timestamp))
   )
     throw new Error("Invalid automation event");
-  const automations = await adminDb
-    .collection("automations")
-    .where("businessId", "==", documentId(event.businessId))
-    .where("status", "==", "active")
-    .get();
+  const repository = automationPersistence();
+  const automations = await repository.list("automations", documentId(event.businessId), "active");
   let handled = false;
   let terminal = false;
   let messageSent = false;
   let actionCount = 0;
-  for (const doc of automations.docs) {
-    if (onlyAutomationId && doc.id !== onlyAutomationId) continue;
-    const automation = validateAutomation(doc.data());
+  for (const row of automations) {
+    if (onlyAutomationId && row.id !== onlyAutomationId) continue;
+    const automation = validateAutomation(row);
     if (!triggerMatches(automation, event)) continue;
-    const runId = eventKey(event.businessId, doc.id, event.id);
-    const ref = adminDb.collection("automation_runs").doc(runId);
-    const claimed = await adminDb.runTransaction(async (tx) => {
-      const existing = (await tx.get(ref)).data();
-      if (existing) return false;
-      tx.create(ref, {
-        automationId: doc.id,
+    const runId = eventKey(event.businessId, row.id, event.id);
+    const claimed = await repository.create("automation_runs", {
+        id: runId,
+        automationId: row.id,
         businessId: event.businessId,
         trigger: event.type,
         event,
         definition: automation,
         status: "running",
-        startedAt: serverTimestamp(),
+        startedAt: new Date().toISOString(),
         completedAt: null,
         actionsExecuted: 0,
         error: null,
         attempts: 1,
-      });
-      return true;
     });
-    const outcome = claimed ? await executeRun(runId, event, automation, 0) : await recordedOutcome(runId);
+    const outcome = claimed ? await executeRun(runId, event, automation, 0) : await recordedOutcomeForBusiness(event.businessId, runId);
     handled ||= outcome.handled;
     terminal ||= outcome.terminal;
     messageSent ||= outcome.messageSent;
@@ -525,15 +509,24 @@ export async function runAutomationEvent(
   }
   return { handled, terminal, messageSent, actionCount };
 }
+async function recordedOutcomeForBusiness(businessId: string, runId: string): Promise<AutomationResult> {
+  const run = await automationPersistence().get("automation_runs", businessId, runId);
+  const messages = postgresRuntimeMode() ? await listRuntimeRecords<TenantRow>("messages", businessId) : (await adminDb.collection("messages").where("automationRunId", "==", runId).get()).docs.map(doc => ({ ...doc.data(), id: doc.id, businessId } as TenantRow));
+  const messageSent = run?.messageSent === true || messages.some(message => message.businessId === businessId && message.automationRunId === runId && !!message.messageId && ["sent", "delivered", "read"].includes(String(message.deliveryStatus)));
+  let handedOff = false;
+  const event = object(run?.event);
+  if (event.conversationId) { const conversation = await scoped("conversations", String(event.conversationId), businessId); handedOff = conversation?.businessId === businessId && conversation?.status === "handed_off"; }
+  return { handled: !!run && run.status !== "skipped", terminal: run?.terminal === true || messageSent || handedOff, messageSent, actionCount: Number(run?.actionsExecuted) || 0 };
+}
 async function executeRun(
   runId: string,
   event: AutomationEvent,
   automation: AutomationInput,
   cursor: number,
 ) {
-  const ref = adminDb.collection("automation_runs").doc(runId);
+  const repository = automationPersistence();
   let executed = cursor;
-  const previous = (await ref.get()).data();
+  const previous = await repository.get("automation_runs", event.businessId, runId);
   let terminal = previous?.terminal === true;
   let messageSent = previous?.messageSent === true;
   const outcome = (handled = true): AutomationResult => ({ handled, terminal, messageSent, actionCount: executed });
@@ -541,10 +534,10 @@ async function executeRun(
     let context = await contextFor(event);
     if (context.conversation.status === "handed_off") {
       terminal = true;
-      await ref.update({
+      await repository.update("automation_runs", event.businessId, runId, {
         status: "skipped",
         error: "Human handoff is active",
-        completedAt: serverTimestamp(),
+        completedAt: new Date().toISOString(),
       });
       return outcome();
     }
@@ -552,43 +545,38 @@ async function executeRun(
       cursor === 0 &&
       !conditionsMatch(automation.conditions, context.conditions)
     ) {
-      await ref.update({
+      await repository.update("automation_runs", event.businessId, runId, {
         status: "skipped",
         error: null,
-        completedAt: serverTimestamp(),
+        completedAt: new Date().toISOString(),
       });
       return outcome(false);
     }
     for (let i = cursor; i < automation.actions.length; i++) {
       context = await contextFor(event);
       if (context.conversation.status === "handed_off") { terminal = true; break; }
-      const current = (await ref.get()).data();
-      const live = (
-        await adminDb
-          .collection("automations")
-          .doc(String(current?.automationId))
-          .get()
-      ).data();
+      const current = await repository.get("automation_runs", event.businessId, runId);
+      const live = await repository.get("automations", event.businessId, String(current?.automationId));
       if (
         !live ||
         live.businessId !== event.businessId ||
         live.status !== "active"
       ) {
-        await ref.update({
+        await repository.update("automation_runs", event.businessId, runId, {
           status: "skipped",
           error: "Automation is paused or deleted",
-          completedAt: serverTimestamp(),
+          completedAt: new Date().toISOString(),
         });
         return outcome(false);
       }
       const action = automation.actions[i];
       if (action.type === "delay") {
-        await ref.update({
+        await repository.update("automation_runs", event.businessId, runId, {
           status: "waiting",
           cursor: i + 1,
           actionsExecuted: i + 1,
           terminal, messageSent,
-          resumeAt: Timestamp.fromMillis(Date.now() + action.minutes! * 60000),
+          resumeAt: new Date(Date.now() + action.minutes! * 60000).toISOString(),
         });
         executed = i + 1;
         return outcome();
@@ -600,10 +588,17 @@ async function executeRun(
       }
       if (["handoff", "state"].includes(action.type)) {
         if (!event.conversationId) throw new Error("Conversation required");
+        if (postgresRuntimeMode()) {
+          const service = await import("@/lib/messaging/services/conversation-service");
+          const current = await service.getConversation({ businessId: event.businessId, customerPhone: context.phone });
+          if (!current || current.id !== event.conversationId || current.status === "handed_off") throw new Error("Conversation unavailable");
+          if (action.type === "handoff") terminal = true;
+          await service.updateConversationState({ businessId: event.businessId, customerPhone: context.phone, state: action.type === "state" ? action.value! : current.state, status: action.type === "handoff" ? "handed_off" : current.status });
+        } else {
         const target = adminDb
           .collection("conversations")
           .doc(documentId(event.conversationId));
-        await adminDb.runTransaction(async (tx) => {
+        const mirrored = await adminDb.runTransaction(async (tx) => {
           const c = (await tx.get(target)).data();
           if (
             !c ||
@@ -618,9 +613,30 @@ async function executeRun(
               ? { status: "handed_off", updatedAt: serverTimestamp() }
               : { state: action.value!, updatedAt: serverTimestamp() },
           );
+          return {
+            ...c,
+            ...(action.type === "handoff" ? { status: "handed_off" } : { state: action.value! }),
+          } as Data;
+        });
+        if (mirrored) await postgresShadowWrite("conversation", {
+          id: event.conversationId,
+          businessId: event.businessId,
+          contactId: event.conversationId,
+          state: String(mirrored.state ?? "start"),
+          status: String(mirrored.status ?? "active"),
+          handoffStatus: mirrored.status === "handed_off" ? "human" : "bot",
+          context: object(mirrored.context),
         });
         if (action.type === "handoff") terminal = true;
+        }
       } else if (action.type === "tag") {
+        if (postgresRuntimeMode()) {
+          await mutateRuntimeRecordById<TenantRow>("customers", documentId(event.customerId), current => {
+            if (current.businessId !== event.businessId) throw new Error("Customer unavailable");
+            const tags = Array.isArray(current.tags) ? current.tags : [];
+            return { ...current, tags: [...new Set([...tags, action.value])].slice(-100), updatedAt: new Date() };
+          });
+        } else {
         const target = adminDb.collection("customers").doc(event.customerId);
         await adminDb.runTransaction(async (tx) => {
           const c = (await tx.get(target)).data();
@@ -632,45 +648,46 @@ async function executeRun(
             updatedAt: serverTimestamp(),
           });
         });
+        }
       } else await sendAction(action, event, runId, i, context, async () => {
         terminal = true;
         messageSent = true;
         executed = i + 1;
-        await ref.update({ terminal, messageSent, actionsExecuted: executed });
+        await repository.update("automation_runs", event.businessId, runId, { terminal, messageSent, actionsExecuted: executed });
       });
       executed = i + 1;
-      await ref.update({ actionsExecuted: executed, terminal, messageSent });
+      await repository.update("automation_runs", event.businessId, runId, { actionsExecuted: executed, terminal, messageSent });
       if (action.type === "handoff") break;
     }
-    await ref.update({
+    await repository.update("automation_runs", event.businessId, runId, {
       status: "completed",
       actionsExecuted: executed,
       terminal, messageSent,
-      completedAt: serverTimestamp(),
+      completedAt: new Date().toISOString(),
     });
     return outcome();
   } catch {
     // Provider errors may contain credentials/customer content. Never persist raw exception strings.
-    await ref.update({
+    await repository.update("automation_runs", event.businessId, runId, {
       status: "failed",
       actionsExecuted: executed,
       terminal, messageSent,
       error:
         "Action failed. Check context, approved template, reply window and account configuration. Automatic retries stopped; review before retrying.",
-      completedAt: serverTimestamp(),
+      completedAt: new Date().toISOString(),
     });
     return outcome();
   }
 }
 export async function resumeAutomationRun(runId: string) {
-  const ref = adminDb.collection("automation_runs").doc(documentId(runId));
-  const claimed = await adminDb.runTransaction(async (tx) => {
-    const run = (await tx.get(ref)).data();
-    if (!run || run.status !== "waiting" || millis(run.resumeAt) > Date.now())
-      return null;
-    tx.update(ref, { status: "running" });
-    return run;
-  });
+  documentId(runId);
+  const run = await automationPersistence().findRun(runId);
+  if (run) await resumeAutomationRunForBusiness(run.businessId, runId);
+}
+export async function resumeAutomationRunForBusiness(businessId: string, runId: string) {
+  const repository = automationPersistence();
+  const run = await repository.get("automation_runs", businessId, documentId(runId));
+  const claimed = !run || run.status !== "waiting" || millis(run.resumeAt) > Date.now() ? null : await repository.update("automation_runs", businessId, runId, { status: "running" });
   if (claimed)
     await executeRun(
       runId,

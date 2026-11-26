@@ -18,7 +18,15 @@ async function main() {
     const mod = { exports: {} }; cache.set(filename, mod);
     const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
     const nativeRequire = createRequire(filename);
-    const localRequire = name => name === 'server-only' ? {} : name.startsWith('@/') ? load(name.slice(2) + '.ts') : nativeRequire(name);
+    const localRequire = name => {
+      if (name === 'server-only') return {};
+      if (name.startsWith('@/')) return load(name.slice(2) + '.ts');
+      if (name.startsWith('.')) {
+        const relative = path.resolve(path.dirname(filename), name);
+        if (fs.existsSync(`${relative}.ts`)) return load(path.relative(root, `${relative}.ts`));
+      }
+      return nativeRequire(name);
+    };
     vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename })(localRequire, mod, mod.exports);
     return mod.exports;
   }

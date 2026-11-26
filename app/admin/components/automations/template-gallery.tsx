@@ -28,7 +28,10 @@ export function AutomationTemplateGallery({
   const cards = eatsTemplateCards(templates, filter);
   const selected = cards.find(c => c.template.id === selectedId) ?? cards[0];
   const preview = selected && <WhatsAppPreview key={selected.template.id} title={selected.display.name} templateId={selected.template.id} messages={previewMessages(selected.template.actions, "Demo Restaurant")} />;
-  const isEats = templates.some(t => t.vertical === "eats");
+  // The Eats-specific presentation is only valid for an Eats-only purchase.
+  // Multi-product businesses use the neutral gallery so every enabled product
+  // remains visible without leaking unpurchased templates.
+  const isEats = templates.length > 0 && templates.every(t => t.vertical === "eats");
   const visible = templates.filter((t) => t.active && (all || t.recommended));
   if (isEats) return (
     <section className="space-y-5" aria-label="Automation templates">

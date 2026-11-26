@@ -92,9 +92,9 @@ async function main() {
     else process.env.META_ACCESS_TOKEN = oldToken;
   }
 
-  // End-to-end interactive webhook with real parsing, routing, and persistence.
-  const business = { name: 'Demo Salon', vertical: 'salon', active: true, whatsappPhoneNumberId: 'TEST_PHONE_NUMBER_ID' };
-  h.seed('businesses/demo-salon', business);
+  // End-to-end interactive webhook with an active product and durable retry handling.
+  const business = { id: 'demo-retail', name: 'Demo Retail', vertical: 'retail', active: true, whatsappPhoneNumberId: 'TEST_PHONE_NUMBER_ID' };
+  h.seed('businesses/demo-retail', business);
   const { POST } = h.load('app/api/whatsapp/webhook/route.ts');
   const post = async (id, selection, type = 'button_reply', title = 'Label') => {
     const payload = dummyPayload(id);
@@ -103,20 +103,20 @@ async function main() {
     message.interactive = { type, [type]: { id: selection, title } };
     return POST(new NextRequest('http://localhost/api/whatsapp/webhook', { method: 'POST', headers: signedWebhookHeaders(payload), body: JSON.stringify(payload) }));
   };
-  let response = await post('wamid.select-service', 'salon_service_haircut', 'list_reply', 'Haircut');
+  let response = await post('wamid.select-main-menu', 'retail_menu_main', 'button_reply', 'Main menu');
   assert.equal(response.status, 200);
   let result = await response.json();
-  assert.equal(result.state, 'salon_awaiting_date');
-  assert.equal(result.structuredReply.type, 'buttons');
-  const stored = h.read('messages/wamid.select-service');
-  assert.equal(stored.selectionId, 'salon_service_haircut');
-  assert.equal(stored.selectionTitle, 'Haircut');
+  assert.equal(result.state, 'retail_main_menu');
+  assert.equal(result.structuredReply.type, 'list');
+  const stored = h.read('messages/wamid.select-main-menu');
+  assert.equal(stored.selectionId, 'retail_menu_main');
+  assert.equal(stored.selectionTitle, 'Main menu');
   assert.equal(stored.rawMessageType, 'interactive');
   const outgoing = [...h.documents.values()].find((entry) => entry.direction === 'outgoing');
-  assert.equal(outgoing.replyType, 'buttons');
-  assert.equal(outgoing.body, 'What date would you like to book?');
-  assert.equal(outgoing.reply.buttons.length, 3);
-  assert.equal((await (await post('wamid.select-service', 'salon_service_haircut', 'list_reply', 'Haircut')).json()).skipped, 'duplicate_message');
+  assert.equal(outgoing.replyType, 'list');
+  assert.match(outgoing.body, /Welcome to Demo Retail/);
+  assert.ok(outgoing.reply.sections[0].rows.some(row => row.title === 'Shop Products'));
+  assert.equal((await (await post('wamid.select-main-menu', 'retail_menu_main', 'button_reply', 'Main menu')).json()).skipped, 'duplicate_message');
   assert.equal(h.sends.length, 1);
 
   // Failed sends replay the stored reply instead of interpreting stale IDs.
@@ -124,20 +124,14 @@ async function main() {
   const oldError = console.error;
   try {
     console.error = () => {};
-    response = await post('wamid.select-date', 'salon_date_tomorrow');
+    response = await post('wamid.select-support', 'retail_menu_support');
   } finally { console.error = oldError; }
   assert.equal(response.status, 500);
-  assert.equal(h.read('conversations/demo-salon_919999999999').state, 'salon_awaiting_time');
-  result = await (await post('wamid.select-date', 'salon_date_tomorrow')).json();
-  assert.equal(result.structuredReply.type, 'list');
-  assert.equal(result.state, 'salon_awaiting_time');
-  assert.equal(h.sends.length, 2);
-  result = await (await post('wamid.select-time', 'salon_time_1700', 'list_reply', '5:00 PM')).json();
-  assert.equal(result.state, 'salon_awaiting_confirmation');
+  assert.equal(h.read('conversations/demo-retail_919999999999').state, 'retail_support');
+  result = await (await post('wamid.select-support', 'retail_menu_support')).json();
   assert.equal(result.structuredReply.type, 'buttons');
-  await post('wamid.confirm', 'salon_confirm');
-  await post('wamid.confirm', 'salon_confirm');
-  assert.equal([...h.documents.keys()].filter((key) => key.startsWith('payments/')).length, 1);
-  console.log('PASS: text/button/list payloads; real sender with mocked fetch; legacy normalization/wrapper; safe validation and text fallbacks; button/list/location parsing; metadata storage; duplicate protection; interactive retry replay; Salon webhook journey. No live API calls.');
+  assert.equal(result.state, 'retail_support');
+  assert.equal(h.sends.length, 2);
+  console.log('PASS: text/button/list payloads; real sender with mocked fetch; legacy normalization/wrapper; safe validation and text fallbacks; button/list/location parsing; metadata storage; duplicate protection; interactive retry replay; Retail webhook journey. No live API calls.');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

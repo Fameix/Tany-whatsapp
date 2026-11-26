@@ -342,19 +342,20 @@ async function main() {
   }
   const { identityMenu } = h.load("lib/messaging/identity-menu.ts");
   assert.deepEqual(
-    identityMenu("salon").buttons.map((b) => b.title),
-    ["Book Appointment", "My Bookings", "Help"],
+    identityMenu("retail").buttons.map((b) => b.title),
+    ["Shop Products", "My Orders", "Help"],
   );
   assert.deepEqual(
     identityMenu("motos").buttons.map((b) => b.title),
     ["Browse Cars", "My Bookings", "Help"],
   );
-  for (const vertical of ["salon", "motos"]) {
+  for (const vertical of ["retail", "motos"]) {
     const verticalHarness = createHarness();
     const verticalBusiness = {
       ...demoBusiness,
       id: `demo-${vertical}`,
       vertical,
+      name: `Demo ${vertical}`,
     };
     verticalHarness.seed(`businesses/demo-${vertical}`, verticalBusiness);
     const service = verticalHarness.load(
@@ -364,11 +365,20 @@ async function main() {
       verticalBusiness,
       message(`wamid.${vertical}-hello`, "Hello"),
     );
-    assert.equal(greeting.structuredReply.type, "buttons");
-    assert.deepEqual(
-      greeting.structuredReply.buttons.map((b) => b.title),
-      identityMenu(vertical).buttons.map((b) => b.title),
-    );
+    if (vertical === "retail") {
+      assert.equal(greeting.structuredReply.type, "list");
+      assert.match(greeting.structuredReply.body, /Welcome to Demo retail/);
+      assert.deepEqual(
+        greeting.structuredReply.sections.flatMap((section) => section.rows).map((row) => row.title),
+        ["Shop Products", "Track Order", "Offers", "Support"],
+      );
+    } else {
+      assert.equal(greeting.structuredReply.type, "buttons");
+      assert.deepEqual(
+        greeting.structuredReply.buttons.map((b) => b.title),
+        identityMenu(vertical).buttons.map((b) => b.title),
+      );
+    }
     const start = await service.processIncomingMessage(verticalBusiness, {
       from: phone,
       id: `wamid.${vertical}-start`,

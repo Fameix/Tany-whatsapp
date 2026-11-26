@@ -3,20 +3,38 @@ import { adminDb } from "@/lib/firebase-admin";
 import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
 import { AdminValidationError, objectInput, stringInput } from "@/lib/admin/validation";
 import { assertWhatsAppPhoneMapping } from "@/lib/whatsapp/setup-service";
+import { isAllowedTokenSecretName } from "@/lib/whatsapp/credentials";
+import { databaseMode, postgresRepositoryFor } from "@/lib/data/repository";
 
 /** Internal operations only: billing gates belong to the separate client APIs. */
 export async function updateAccountMetadata(businessId: string, accountId: string, input: unknown, activateForTesting = false) {
-  const value = objectInput(input, ["displayName", "displayPhone", "phoneNumberId", "wabaId", "status"]);
+  const value = objectInput(input, ["displayName", "displayPhone", "phoneNumberId", "wabaId", "tokenSecretName", "status"]);
   const displayName = stringInput(value.displayName, "displayName", 120);
   const displayPhone = stringInput(value.displayPhone, "displayPhone", 30).replace(/[\s()+-]/g, "");
   if (!/^[1-9]\d{7,14}$/.test(displayPhone)) throw new AdminValidationError({ displayPhone: "Enter a phone number including country code." });
   const phoneNumberId = stringInput(value.phoneNumberId, "phoneNumberId", 40);
   const wabaId = stringInput(value.wabaId, "wabaId", 40);
+  const requestedTokenSecretName = typeof value.tokenSecretName === "string" && value.tokenSecretName.trim()
+    ? stringInput(value.tokenSecretName, "tokenSecretName", 101) : null;
   for (const [field, id] of Object.entries({ phoneNumberId, wabaId })) {
     if (!/^[1-9]\d{0,39}$/.test(id)) throw new AdminValidationError({ [field]: "Enter a numeric Meta ID." });
   }
   const requestedStatus = stringInput(value.status, "status", 30);
   if (!["pending", "configured", "connected", "disconnected", "error"].includes(requestedStatus)) throw new AdminValidationError({ status: "Choose a valid status." });
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
+    const current = await (await postgresRepositoryFor()).getWhatsAppAccount(businessId);
+    const tokenSecretName = requestedTokenSecretName ?? current?.tokenSecretName ?? "";
+    if (!tokenSecretName || !isAllowedTokenSecretName(tokenSecretName, businessId)) throw new AdminValidationError({ tokenSecretName: "This token secret name is not available for this business." });
+    try {
+      return await (await postgresRepositoryFor()).updateAccountMetadata({ businessId, accountId, displayName, displayPhone: `+${displayPhone}`, phoneNumberId, wabaId, tokenSecretName, status: requestedStatus, activateForTesting });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message === "POSTGRES_PHONE_ALREADY_CONNECTED") throw new AdminValidationError({ phoneNumberId: "This Phone Number ID is already assigned to another account." });
+      if (message === "POSTGRES_ACCOUNT_NOT_FOUND" || message === "POSTGRES_TENANT_UNMAPPED") throw new AdminValidationError({ form: "Account unavailable for this business." });
+      if (message === "POSTGRES_BUSINESS_INACTIVE") throw new AdminValidationError({ form: "Activate the business before testing WhatsApp." });
+      throw error;
+    }
+  }
   const businessRef = adminDb.collection("businesses").doc(documentId(businessId));
   const accountRef = adminDb.collection("whatsapp_accounts").doc(documentId(accountId));
   return adminDb.runTransaction(async tx => {
@@ -31,6 +49,8 @@ export async function updateAccountMetadata(businessId: string, accountId: strin
       if (accountId !== businessId || typeof businessData.whatsappPhoneNumberId !== "string" || !businessData.whatsappPhoneNumberId.trim() || !existing.empty) throw new AdminValidationError({ form: "Account unavailable for this business." });
     }
     const prior = previous ?? { phoneNumberId: businessData.whatsappPhoneNumberId };
+    const tokenSecretName = requestedTokenSecretName ?? (typeof prior.tokenSecretName === "string" ? prior.tokenSecretName : "");
+    if (!tokenSecretName || !isAllowedTokenSecretName(tokenSecretName, businessId)) throw new AdminValidationError({ tokenSecretName: "This token secret name is not available for this business." });
     await assertWhatsAppPhoneMapping(tx, businessId, phoneNumberId);
     const mappingRef = adminDb.collection("whatsapp_phone_mappings").doc(phoneNumberId);
     const [duplicates, mapping] = await Promise.all([
@@ -46,7 +66,7 @@ export async function updateAccountMetadata(businessId: string, accountId: strin
     const status = activateForTesting ? "connected" : requestedStatus === "connected" && !verified ? "pending" : requestedStatus;
     const keepVerification = verified && status === "connected";
     const metadata = {
-      displayName, displayPhone: `+${displayPhone}`, phoneNumberId, wabaId, status,
+      displayName, displayPhone: `+${displayPhone}`, phoneNumberId, wabaId, tokenSecretName, status,
       revision: (Number(prior.revision) || 0) + 1, updatedAt: serverTimestamp(),
       internalTestingActive: activateForTesting,
       ...(!keepVerification ? { testPassed: false, validationMode: null, testedAt: null, testMessage: "", setupStep: 3 } : {}),

@@ -1,4 +1,5 @@
 import { adminDb } from "@/lib/firebase-admin";
+import { Timestamp } from "firebase-admin/firestore";
 import type {
   ConversationContext,
   Customer,
@@ -6,6 +7,7 @@ import type {
 } from "@/lib/messaging/domain-types";
 import { mergeConversationContext } from "@/lib/messaging/context";
 import { getOrCreateCustomer } from "@/lib/messaging/services/customer-service";
+import { getRuntimeRecord, mutateRuntimeRecord, postgresRuntimeMode } from "@/lib/messaging/services/postgres-runtime-records";
 import {
   customerDocumentId,
   readDocument,
@@ -38,6 +40,18 @@ export async function saveCustomerLocation({
   }
   await getOrCreateCustomer({ businessId, phone: customerPhone });
   const id = customerDocumentId(businessId, customerPhone);
+  if (postgresRuntimeMode()) {
+    const saved: LocationData = { latitude: location.latitude, longitude: location.longitude, address: location.address ?? null, label: location.label ?? null, source: location.source, updatedAt: Timestamp.now() };
+    const key = location.label?.trim().toLowerCase();
+    await mutateRuntimeRecord<Customer & Record<string, unknown>>("customers", businessId, id, current => {
+      if (!current) throw new Error("Customer unavailable");
+      return { ...current, location: saved, updatedAt: saved.updatedAt, lastInteractionAt: saved.updatedAt, ...(key === "home" || key === "work" ? { savedAddresses: { ...(current.savedAddresses ?? {}), [key]: saved } } : {}) };
+    });
+    const { getConversation, updateConversationState } = await import("@/lib/messaging/services/conversation-service");
+    const currentConversation = await getConversation({ businessId, customerPhone });
+    if (currentConversation) await updateConversationState({ businessId, customerPhone, state: currentConversation.state, context: mergeConversationContext(currentConversation.context, { customerLocationId: id, location: { latitude: saved.latitude, longitude: saved.longitude, address: saved.address, label: saved.label, source: saved.source } }) });
+    return saved;
+  }
   const customer = adminDb.collection("customers").doc(id);
   const conversation = adminDb.collection("conversations").doc(id);
   return adminDb.runTransaction(async (transaction) => {
@@ -112,6 +126,7 @@ export async function getCustomerLocation({
   businessId: string;
   customerPhone: string;
 }): Promise<LocationData | null> {
+  if (postgresRuntimeMode()) return (await getRuntimeRecord<Customer & Record<string, unknown>>("customers", businessId, customerDocumentId(businessId, customerPhone)))?.location ?? null;
   const customer = await readDocument<Customer>(
     adminDb
       .collection("customers")

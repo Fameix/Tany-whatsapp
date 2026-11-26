@@ -1,4 +1,5 @@
 import { validatePlaceholders } from "@/lib/automations/placeholders";
+import { activeTanyVerticals, type ActiveTanyVertical } from "@/lib/messaging/vertical-config";
 export const triggerOptions = {
   "customer.message.received": "Customer message received",
   "keyword.matched": "Keyword matched",
@@ -51,6 +52,8 @@ export type Action = {
   minutes?: number;
 };
 export type AutomationInput = {
+  /** Product provenance for an unsaved gallery draft; always re-authorized server-side. */
+  product?: ActiveTanyVertical;
   name: string;
   description: string;
   trigger: {
@@ -248,7 +251,11 @@ export function validateAutomation(input: unknown): AutomationInput {
       );
     return action;
   });
+  const product = raw.product;
+  if (product !== undefined && !(activeTanyVerticals as readonly string[]).includes(product))
+    throw new Error("Choose an enabled product.");
   return {
+    ...(product ? { product } : {}),
     name: raw.name.trim(),
     description: raw.description.trim(),
     trigger,

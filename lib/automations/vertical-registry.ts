@@ -1,6 +1,7 @@
 import type { Action, AutomationInput, Condition, TriggerType } from "@/lib/automations/model";
+import type { ActiveTanyVertical } from "@/lib/messaging/vertical-config";
 
-export type ActiveAutomationVertical = "eats" | "motos" | "cabs";
+export type ActiveAutomationVertical = ActiveTanyVertical;
 export type VerticalTemplate = AutomationInput & { id: string; vertical: ActiveAutomationVertical; category: string; recommended: boolean; active: boolean };
 export type VerticalDataAdapter = { entity: "order" | "vehicle" | "ride"; hooks: readonly string[] };
 type VerticalDefinition = {
@@ -37,25 +38,31 @@ const motos: VerticalTemplate[] = [
   make("motos", "similar_vehicles", "Suggest Similar Vehicles", "Offer comparable available vehicles.", "Vehicles", { type: "keyword.matched", keywords: ["similar"] }, text("We can suggest similar available vehicles within your budget.")),
   make("motos", "handoff", "Talk to Sales", "Assign a lead to the sales team.", "Support", { type: "keyword.matched", keywords: ["sales", "staff"] }, [...text("A sales specialist will continue this conversation."), { type: "handoff" }]),
 ];
-const cabs: VerticalTemplate[] = [
-  make("cabs", "welcome_rider", "Welcome Rider", "Welcome a rider and offer booking choices.", "Recommended", { type: "customer.message.received" }, [{ type: "buttons", text: "Welcome to {{business_name}}. Where would you like to go?", choices: ["Book a Ride", "Track Ride", "Need Help"] }], true),
-  make("cabs", "book_ride", "Book a Ride", "Collect pickup and drop locations.", "Rides", { type: "keyword.matched", keywords: ["ride", "book"] }, [{ type: "location", text: "Please share your pickup location." }]),
-  make("cabs", "fare_estimate", "Fare Estimate", "Show a fare estimate for the selected route.", "Rides", { type: "keyword.matched", keywords: ["fare", "estimate"] }, [{ type: "buttons", text: "Chennai Central to T Nagar is estimated at ₹320.", choices: ["Book Ride", "Change Route"] }]),
-  make("cabs", "ride_confirmed", "Ride Confirmed", "Confirm a booked ride.", "Rides", { type: "booking.status.changed" }, text("Your ride from Chennai Central to T Nagar is confirmed.")),
-  make("cabs", "driver_assigned", "Driver Assigned", "Share assigned driver details.", "Rides", { type: "booking.status.changed" }, text("Arun is on the way in a Swift (TN 01 AB 1234).")),
-  make("cabs", "driver_arriving", "Driver Arriving", "Tell a rider their driver is arriving.", "Rides", { type: "booking.status.changed" }, text("Arun will arrive shortly in the Swift (TN 01 AB 1234).")),
-  make("cabs", "trip_started", "Trip Started", "Notify when a trip starts.", "Rides", { type: "booking.status.changed" }, text("Your trip has started.")),
-  make("cabs", "trip_completed", "Trip Completed", "Confirm trip completion.", "Rides", { type: "booking.status.changed" }, text("Your trip is complete. Fare: ₹320.")),
-  make("cabs", "payment", "Payment Reminder", "Send the existing pending payment link.", "Payments", { type: "booking.status.changed" }, [{ type: "payment_link" }]),
-  make("cabs", "help", "Need Help", "Hand a ride issue to support.", "Support", { type: "keyword.matched", keywords: ["help", "support"] }, [...text("A support team member will help shortly."), { type: "handoff" }]),
+const retail: VerticalTemplate[] = [
+  make("retail", "welcome", "Welcome Customer", "Greet shoppers using the business name.", "Recommended", { type: "customer.message.received" }, [{ type: "list", text: "Welcome to {{business_name}}! What would you like to do?", choices: ["Shop Products", "Track Order", "Offers", "Support"] }], true),
+  status("retail", "confirmation", "Order Confirmed", "Confirm a retail order.", "confirmed", "Your order {{order_id}} with {{business_name}} is confirmed."),
+  status("retail", "ready", "Order Ready", "Tell a shopper an order is ready.", "ready", "Your order {{order_id}} from {{business_name}} is ready for pickup."),
+  status("retail", "preparing", "Preparing Order", "Tell a shopper preparation has started.", "preparing", "Your order {{order_id}} is being prepared."),
+  status("retail", "packed", "Order Packed", "Tell a shopper the order is packed.", "packed", "Your order {{order_id}} is packed."),
+  status("retail", "out_for_delivery", "Out for Delivery", "Tell a shopper the order is on the way.", "out_for_delivery", "Your order {{order_id}} is out for delivery."),
+  status("retail", "delivered", "Order Delivered", "Confirm delivery and invite feedback.", "delivered", "Your order {{order_id}} has been delivered. Reply MENU to shop again or SUPPORT for help."),
 ];
-
 export const verticalRegistry: Record<ActiveAutomationVertical, VerticalDefinition> = {
   eats: { label: "Tany Eats", description: "Order and delivery automations", supportedTriggers: ["customer.message", "order.created", "order.confirmed", "order.preparing", "order.out_for_delivery", "order.delivered", "payment.pending", "business.closed"], supportedActions: ["send_text", "buttons", "list", "wait", "assign_staff", "pause_automation", "payment_cta", "location", "end", "show_menu", "show_order_status", "feedback"], automationTriggers: ["customer.message.received", "keyword.matched", "order.created", "order.status.changed", "booking.created", "booking.status.changed", "payment.completed", "conversation.no_reply", "schedule.triggered", "conversation.started"], automationActions: ["text", "buttons", "list", "template", "location", "payment_link", "handoff", "tag", "state", "delay", "end"], featureFlags: { catalog: true, booking: false, ride: false }, adapter: { entity: "order", hooks: ["menu", "order_status", "payment"] }, templates: eats },
+  retail: { label: "Tany Retail", description: "Retail order and pickup automations", supportedTriggers: ["customer.message", "order.created", "order.confirmed", "order.ready"], supportedActions: ["send_text", "buttons", "list", "wait", "assign_staff", "pause_automation", "end"], automationTriggers: ["customer.message.received", "keyword.matched", "order.created", "order.status.changed", "conversation.no_reply", "schedule.triggered", "conversation.started"], automationActions: ["text", "buttons", "list", "template", "handoff", "tag", "state", "delay", "end"], featureFlags: { catalog: true, booking: false, ride: false }, adapter: { entity: "order", hooks: ["catalog", "order_status"] }, templates: retail },
   motos: { label: "Tany Motos", description: "Vehicle leads and test-drive automations", supportedTriggers: ["customer.message", "lead.created", "vehicle.enquiry", "test_drive.requested", "test_drive.confirmed", "finance.enquiry", "vehicle.sold", "lead.inactive"], supportedActions: ["send_text", "buttons", "list", "wait", "assign_staff", "pause_automation", "end", "show_vehicle", "send_vehicle_details", "request_test_drive", "finance_cta", "suggest_alternatives", "assign_sales_staff"], automationTriggers: ["customer.message.received", "keyword.matched", "booking.created", "booking.status.changed", "conversation.no_reply"], automationActions: ["text", "buttons", "list", "delay", "handoff", "end"], featureFlags: { catalog: false, vehicle_cards: true, test_drive: true, ride: false }, adapter: { entity: "vehicle", hooks: ["vehicle", "test_drive", "finance"] }, templates: motos },
-  cabs: { label: "Tany Cabs", description: "Ride booking and trip-status automations", supportedTriggers: ["customer.message", "ride.requested", "ride.confirmed", "driver.assigned", "driver.arriving", "trip.started", "trip.completed", "payment.pending", "ride.cancelled"], supportedActions: ["send_text", "buttons", "list", "wait", "assign_staff", "pause_automation", "payment_cta", "location", "end", "collect_pickup", "collect_drop", "show_fare_estimate", "show_driver_details", "show_trip_status"], automationTriggers: ["customer.message.received", "keyword.matched", "booking.created", "booking.status.changed", "conversation.no_reply"], automationActions: ["text", "buttons", "list", "delay", "handoff", "payment_link", "location", "end"], featureFlags: { catalog: false, test_drive: false, ride: true, location: true }, adapter: { entity: "ride", hooks: ["pickup", "drop", "fare", "driver", "trip_status"] }, templates: cabs },
 };
 export function isActiveAutomationVertical(value: unknown): value is ActiveAutomationVertical { return typeof value === "string" && Object.hasOwn(verticalRegistry, value); }
 export function getVerticalDefinition(vertical: unknown) { return isActiveAutomationVertical(vertical) ? verticalRegistry[vertical] : null; }
 export function templatesForRegisteredVertical(vertical: unknown): VerticalTemplate[] { const definition = getVerticalDefinition(vertical); return definition ? JSON.parse(JSON.stringify(definition.templates)) : []; }
+export function templatesForEnabledProducts(products: readonly ActiveAutomationVertical[]): VerticalTemplate[] {
+  return products.flatMap((product) => templatesForRegisteredVertical(product));
+}
+export function templateForRegisteredProduct(templateId: string): VerticalTemplate | null {
+  for (const product of Object.keys(verticalRegistry) as ActiveAutomationVertical[]) {
+    const template = verticalRegistry[product].templates.find((candidate) => candidate.id === templateId);
+    if (template) return JSON.parse(JSON.stringify(template));
+  }
+  return null;
+}
 export function assertVerticalAutomationAllowed(vertical: unknown, input: AutomationInput) { const definition = getVerticalDefinition(vertical); if (!definition) return input; if (!definition.automationTriggers.includes(input.trigger.type)) throw new Error("This trigger is not available for this product."); if (input.actions.some(action => !definition.automationActions.includes(action.type))) throw new Error("This action is not available for this product."); return input; }

@@ -142,12 +142,12 @@ export function BusinessList({
       icon: CircleCheck,
     },
     {
-      label: "Catalog items",
+      label: "Conversations mirrored",
       value: businesses.reduce(
-        (count, business) => count + business.catalogCount,
+        (count, business) => count + (business.conversationCount ?? 0),
         0,
       ),
-      detail: "Products, services & inventory",
+      detail: "Available in Messaging Postgres",
       icon: Package,
     },
   ];
@@ -252,7 +252,7 @@ export function BusinessList({
                 <TableHead scope="col">Plan / status</TableHead>
                 <TableHead scope="col">WhatsApp phone ID</TableHead>
                 <TableHead scope="col" className="text-right">
-                  Items
+                  Conversations
                 </TableHead>
                 <TableHead scope="col" className="sticky right-0 w-12 border-l">
                   <span className="sr-only">Actions</span>
@@ -311,7 +311,7 @@ export function BusinessList({
                     {business.whatsappPhoneNumberId}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {business.catalogCount}
+                    {business.conversationCount ?? 0}
                   </TableCell>
                   <TableCell className="sticky right-0 border-l bg-background">
                     <RowActions business={business} />

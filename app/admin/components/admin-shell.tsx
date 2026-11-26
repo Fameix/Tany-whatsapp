@@ -113,7 +113,7 @@ function WorkspaceSidebar({
       <SidebarContent>
         <SidebarGroup className="px-2">
           <SidebarGroupLabel className="px-2 text-[11px]">
-            WhatsApp operations
+            Products
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <Suspense

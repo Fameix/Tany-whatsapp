@@ -1,5 +1,6 @@
 import { listBusinessProfiles } from "@/lib/admin/services";
 import { automationDashboard } from "@/lib/automations/service";
+import { EntitlementError } from "@/lib/subscriptions/entitlements";
 import { AutomationBuilder } from "./automation-builder";
 export async function AutomationPage({ businessId }: { businessId?: string }) {
   if (process.env.NODE_ENV === "development")
@@ -24,6 +25,8 @@ export async function AutomationPage({ businessId }: { businessId?: string }) {
         console.info("[AUTOMATION_PAGE_DASHBOARD_DONE]", { businessId });
     }
   } catch (error) {
+    if (error instanceof EntitlementError)
+      return <main className="rounded-xl border p-6"><p className="text-sm font-medium text-primary">WhatsApp Automation</p><h1 className="mt-2 text-2xl font-semibold">Available with Pro</h1><p className="mt-3 text-sm text-muted-foreground">Upgrade this business plan to manage WhatsApp automations.</p></main>;
     if (process.env.NODE_ENV === "development") {
       const details = error as Error & { code?: unknown };
       console.error("[AUTOMATION_PAGE_FAILED]", {

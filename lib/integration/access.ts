@@ -1,9 +1,12 @@
 /** Portable server-to-server protocol. No Firebase, Meta, or browser credentials. */
 export type IntegrationScope =
   { kind: "directory" } | { kind: "business"; businessId: string };
-type Audience = "tany-messaging-v1" | "tany-dashboard-v1";
+type Audience = "tany-messaging-v1" | "tany-dashboard-v1" | "tany-whatsapp-setup-v1";
 type Claims = { aud: Audience; exp: number; scope: IntegrationScope };
 const enc = new TextEncoder();
+const dashboardCredentialLifetime = () =>
+  process.env.NODE_ENV === "development" ? 7 * 24 * 60 * 60 : 60 * 60;
+const credentialLifetime = (audience: Audience) => audience === "tany-dashboard-v1" ? dashboardCredentialLifetime() : audience === "tany-whatsapp-setup-v1" ? 15 * 60 : 120;
 const encode = (bytes: Uint8Array | ArrayBuffer) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/\+/g, "-")
@@ -30,7 +33,7 @@ export async function signIntegrationAccess(
 ) {
   if (secret.length < 32)
     throw new Error("Integration secret is not configured.");
-  if (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > (audience === "tany-dashboard-v1" ? 3600 : 120)) throw new Error("Invalid credential duration.");
+  if (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > credentialLifetime(audience)) throw new Error("Invalid credential duration.");
   const claims: Claims = {
     aud: audience,
     exp: Math.floor(now / 1000) + durationSeconds,
@@ -71,7 +74,7 @@ export async function verifyIntegrationAccess(
       claims.aud !== audience ||
       !Number.isInteger(claims.exp) ||
       claims.exp * 1000 <= now ||
-      claims.exp * 1000 > now + (audience === "tany-dashboard-v1" ? 3600000 : 300000) ||
+      claims.exp * 1000 > now + credentialLifetime(audience) * 1000 ||
       claims.scope?.kind !== expected.kind
     )
       return false;

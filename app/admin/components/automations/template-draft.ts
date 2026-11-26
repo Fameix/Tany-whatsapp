@@ -8,8 +8,8 @@ import type { ProductAutomationTemplate } from "@/lib/automations/product-templa
 export function templateToAutomationInput(
   template: ProductAutomationTemplate,
 ): AutomationInput {
-  const { name, description, trigger, conditions, actions } = template;
+  const { name, description, trigger, conditions, actions, vertical } = template;
   return JSON.parse(
-    JSON.stringify({ name, description, trigger, conditions, actions }),
+    JSON.stringify({ product: vertical, name, description, trigger, conditions, actions }),
   ) as AutomationInput;
 }

@@ -50,11 +50,18 @@ async function runVerticalTests(v) {
   const def = definitions[v];
   const h = setup(v);
   let result = await h.send('HI');
+  if (v === 'retail') {
+    assert.equal(result.state, 'retail_main_menu');
+    result = await h.send(select('retail_menu_shop'));
+    result = await h.send('');
+  }
   assert.equal(result.state, `${v}_awaiting_${def.first}`);
   result = await h.send('');
   assert.equal(result.state, `${v}_awaiting_${def.first}`);
   assert.equal(h.count(def.kind + 's'), 0);
-  result = await journey(h, def.typed);
+  result = v === 'retail'
+    ? await def.typed.reduce(async (pending, step) => { await pending; return h.send(step); }, Promise.resolve())
+    : await journey(h, def.typed);
   assert.equal(result.state, `${v}_awaiting_confirmation`, v + ': typed journey');
   assert.equal(result.reply.type, 'buttons');
   const recordId = result.context[def.kind + 'Id'];

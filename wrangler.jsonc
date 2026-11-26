@@ -1,0 +1,61 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tany-whatsapp",
+  "compatibility_date": "2026-10-27",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "vinext/server/fetch-handler",
+  "assets": {
+    "directory": "dist/client",
+    "html_handling": "none",
+    "not_found_handling": "none",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/*",
+      "!/_next/static/*",
+      "!/*/_next/static/*"
+    ]
+  },
+  "images": {
+    "binding": "IMAGES"
+  },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "cache": {
+    "enabled": false
+  },
+  "r2_buckets": [
+    {
+      "binding": "CACHE_BODIES",
+      "bucket_name": "tany-messaging-response-store-cache-bodies"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CACHE_METADATA",
+        "class_name": "CacheMetadata"
+      }
+    ]
+  },
+  "exports": {
+    "default": {
+      "type": "worker",
+      "cache": {
+        "enabled": false
+      }
+    },
+    "ResponseStoreBinding": {
+      "type": "worker",
+      "cache": {
+        "enabled": true
+      }
+    },
+    "CacheMetadata": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  }
+}

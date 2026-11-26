@@ -1,4 +1,6 @@
 import { adminDb } from "@/lib/firebase-admin";
+import { databaseMode } from "@/lib/data/repository";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
 import type { DocumentData } from "firebase-admin/firestore";
 import type { ConversationContext, StoredTimestamp } from "@/lib/messaging/domain-types";
 import { mergeConversationContext } from "@/lib/messaging/context";
@@ -21,6 +23,7 @@ function parseItem(id: string, data: DocumentData | undefined): CatalogItem | nu
   } catch { return null; }
 }
 export async function getCatalog(businessId: string, filters: CatalogFilters = {}): Promise<CatalogItem[]> {
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") return new PostgresMessagingRepository().listCatalog(businessId, filters) as Promise<CatalogItem[]>;
   const snapshot = await collection(businessId).get();
   return snapshot.docs.map((doc) => parseItem(doc.id, doc.data())).filter((item): item is CatalogItem => !!item)
     .filter((item) => (filters.available === undefined || item.available === filters.available) && (!filters.type || item.type === filters.type) &&
@@ -28,6 +31,7 @@ export async function getCatalog(businessId: string, filters: CatalogFilters = {
     .sort((a, b) => Number(a.metadata.sortOrder ?? 0) - Number(b.metadata.sortOrder ?? 0) || a.id.localeCompare(b.id));
 }
 export async function getCatalogItem(businessId: string, itemId: string): Promise<CatalogItem | null> {
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") return new PostgresMessagingRepository().getCatalogItem(businessId, itemId) as Promise<CatalogItem | null>;
   const snapshot = await collection(businessId).doc(documentId(itemId)).get();
   return parseItem(snapshot.id, snapshot.data());
 }

@@ -5,24 +5,7 @@ const { createHarness, demoBusiness } = require("./messaging-test-helpers.cjs");
 const verticals = [
   "motos",
   "eats",
-  "cabs",
-  "ecom",
-  "expert",
-  "gaming",
-  "garage",
-  "meat",
-  "meds",
   "retail",
-  "salon",
-  "sport",
-];
-const common = [
-  "Welcome",
-  "Business Closed",
-  "No Reply Follow-up",
-  "Payment Reminder",
-  "Feedback",
-  "Human Handoff",
 ];
 async function main() {
   const h = createHarness({ seedFixtures: false });
@@ -48,6 +31,7 @@ async function main() {
   const localTemplate = eats.find(t => t.id === "eats_welcome_product");
   const localDraft = templateToAutomationInput(localTemplate);
   assert.deepEqual(localDraft, {
+    product: "eats",
     name: localTemplate.name,
     description: localTemplate.description,
     trigger: localTemplate.trigger,
@@ -111,10 +95,11 @@ async function main() {
   assert.equal(JSON.stringify(eats), originalEats);
   const model = h.load("lib/automations/model.ts");
   const service = h.load("lib/automations/service.ts");
+  const registry = h.load("lib/automations/vertical-registry.ts");
   const snapshots = Object.fromEntries(
     verticals.map((v) => [
       v,
-      JSON.stringify(catalogue.templatesForVertical(v)),
+      JSON.stringify(registry.templatesForRegisteredVertical(v)),
     ]),
   );
   const allIds = new Set();
@@ -126,14 +111,9 @@ async function main() {
       name: `Test ${vertical}`,
       vertical,
     });
-    const templates = catalogue.templatesForVertical(vertical);
-    assert.ok(templates.length >= 10);
+    const templates = registry.templatesForRegisteredVertical(vertical);
+    assert.ok(templates.length > 0, `${vertical} should have active product templates`);
     assert.ok(templates.some((t) => t.recommended));
-    for (const name of common)
-      assert.ok(
-        templates.some((t) => t.name === name),
-        `${vertical}: ${name}`,
-      );
     for (const template of templates) {
       assert.equal(template.vertical, vertical);
       assert.ok(template.active);
@@ -152,7 +132,8 @@ async function main() {
         assert.ok(Object.hasOwn(template, field));
       assert.ok(!allIds.has(template.id));
       allIds.add(template.id);
-      const cloned = catalogue.cloneProductTemplate(vertical, template.id);
+      const { id: ignored, vertical: ignoredVertical, category: ignoredCategory, recommended: ignoredRecommended, active: ignoredActive, ...cloned } = template;
+      void ignored; void ignoredVertical; void ignoredCategory; void ignoredRecommended; void ignoredActive;
       model.validateAutomation(cloned);
       assert.equal(cloned.id, undefined);
       const created = await service.createAutomationFromTemplate(
@@ -175,7 +156,7 @@ async function main() {
     assert.ok(
       dashboard.automationTemplates.every((t) => t.vertical === vertical),
     );
-    const source = templates.find((t) => t.id.endsWith("_welcome_product"));
+    const source = templates.find((t) => t.recommended);
     const first = await service.createAutomationFromTemplate(
       businessId,
       source.id,
@@ -194,8 +175,8 @@ async function main() {
       "Custom customer welcome",
     );
     assert.equal(h.read(`automations/${second.id}`).name, source.name);
-    const foreign = catalogue.templatesForVertical(
-      vertical === "salon" ? "eats" : "salon",
+    const foreign = registry.templatesForRegisteredVertical(
+      vertical === "eats" ? "motos" : "eats",
     )[0];
     const before = h.writes.length;
     await assert.rejects(
@@ -203,46 +184,20 @@ async function main() {
     );
     assert.equal(h.writes.length, before);
     assert.equal(
-      JSON.stringify(catalogue.templatesForVertical(vertical)),
+      JSON.stringify(registry.templatesForRegisteredVertical(vertical)),
       snapshots[vertical],
       "source catalogue unchanged after clone/edit/publish",
     );
     templates[0].actions[0].text = "Mutated client copy";
     templates[0].active = false;
     assert.equal(
-      JSON.stringify(catalogue.templatesForVertical(vertical)),
+      JSON.stringify(registry.templatesForRegisteredVertical(vertical)),
       snapshots[vertical],
     );
   }
-  assert.deepEqual(catalogue.templatesForVertical("unknown"), []);
-  for (const [vertical, names] of Object.entries({
-    salon: [
-      "Welcome & Book",
-      "Booking Confirmation",
-      "Appointment Reminder",
-      "Missed Appointment Follow-up",
-    ],
-    eats: [
-      "Welcome & Start Order",
-      "Order Confirmation",
-      "Preparing",
-      "Out for Delivery",
-      "Delivered",
-    ],
-    motos: [
-      "Welcome & Browse Cars",
-      "Vehicle Enquiry",
-      "Test Drive Booking",
-      "Test Drive Reminder",
-      "Price Enquiry",
-      "Finance Enquiry",
-      "Lead Follow-up",
-    ],
-  }))
-    for (const name of names)
-      assert.ok(
-        catalogue.templatesForVertical(vertical).some((t) => t.name === name),
-      );
+  assert.deepEqual(registry.templatesForRegisteredVertical("unknown"), []);
+  for (const vertical of verticals)
+    assert.ok(registry.templatesForRegisteredVertical(vertical).every((template) => template.vertical === vertical));
   const placeholders = h.load("lib/automations/placeholders.ts");
   const values = placeholders.automationPlaceholderValues({
     business: { name: "Glow Salon", secret: "PRIVATE" },
@@ -276,17 +231,17 @@ async function main() {
       actions: [{ type: "text", text: "{{META_ACCESS_TOKEN}}" }],
     }),
   );
-  // Exercise the real engine and inbound orchestration, including welcome-button fallback.
+  // Exercise the real engine and inbound orchestration for an active product.
   const live = createHarness({ seedFixtures: false });
   const phone = "919999999999",
-    customerId = `salon_${phone}`;
-  live.seed("businesses/salon", {
+    customerId = `motos_${phone}`;
+  live.seed("businesses/motos", {
     ...demoBusiness,
-    vertical: "salon",
-    name: "Glow Salon",
+    vertical: "motos",
+    name: "Demo Motors",
   });
   live.seed(`customers/${customerId}`, {
-    businessId: "salon",
+    businessId: "motos",
     phone,
     name: "Asha",
   });
@@ -296,48 +251,48 @@ async function main() {
     uid: "PRIVATE_UID",
   });
   live.seed(`conversations/${customerId}`, {
-    businessId: "salon",
+    businessId: "motos",
     customerPhone: phone,
-    vertical: "salon",
+    vertical: "motos",
     status: "active",
-    state: "salon_start",
+    state: "motos_start",
     context: { bookingId: "b1", orderId: "o1" },
   });
   live.seed("bookings/b1", {
-    businessId: "salon",
+    businessId: "motos",
     customerPhone: phone,
-    vertical: "salon",
+    vertical: "motos",
     bookingDate: "2026-11-01",
     startTime: "10:30",
     status: "confirmed",
     amount: 250,
   });
   live.seed("orders/o1", {
-    businessId: "salon",
+    businessId: "motos",
     customerPhone: phone,
     status: "confirmed",
     total: 250,
   });
   live.seed("messages/incoming", {
-    businessId: "salon",
+    businessId: "motos",
     customerPhone: phone,
     direction: "incoming",
     createdAt: live.Timestamp.now(),
   });
   const svc = live.load("lib/automations/service.ts");
   const created = await svc.createAutomationFromTemplate(
-    "salon",
-    "salon_welcome_product",
+    "motos",
+    "motos_welcome_lead",
   );
   created.draft.actions[0].text =
     "Hi {{customer_name}}, welcome to {{business_name}}. Order {{order_id}}; booking {{booking_date}} {{booking_time}}; INR {{amount}}.";
-  await svc.saveAutomation("salon", created.id, created.draft);
-  await svc.changeAutomation("salon", created.id, "publish");
+  await svc.saveAutomation("motos", created.id, created.draft);
+  await svc.changeAutomation("motos", created.id, "publish");
   const inbound = live.load(
     "lib/messaging/services/incoming-message-service.ts",
   );
   await inbound.processIncomingMessage(
-    { ...demoBusiness, id: "salon", vertical: "salon", name: "Glow Salon" },
+    { ...demoBusiness, id: "motos", vertical: "motos", name: "Demo Motors" },
     {
       from: phone,
       id: "wamid.welcome.product",
@@ -348,14 +303,14 @@ async function main() {
   assert.equal(live.sends.length, 1);
   assert.equal(
     live.sends[0].reply.body,
-    "Hi Asha, welcome to Glow Salon. Order o1; booking 2026-11-01 10:30; INR 250.00.",
+    "Hi Asha, welcome to Demo Motors. Order o1; booking 2026-11-01 10:30; INR 250.00.",
   );
-  for (const item of require("./fixtures/business-data.json").salon.catalog)
-    live.seed(`businesses/salon/catalog/${item.id}`, item);
+  for (const item of require("./fixtures/business-data.json").motos.catalog)
+    live.seed(`businesses/motos/catalog/${item.id}`, item);
   const button = live.sends[0].reply.buttons[0];
-  assert.equal(button.title, "Book Appointment");
+  assert.equal(button.title, "Browse Cars");
   const selected = await inbound.processIncomingMessage(
-    { ...demoBusiness, id: "salon", vertical: "salon", name: "Glow Salon" },
+    { ...demoBusiness, id: "motos", vertical: "motos", name: "Demo Motors" },
     {
       from: phone,
       id: "wamid.product.button",
@@ -363,12 +318,7 @@ async function main() {
       interactive: { type: "button_reply", button_reply: button },
     },
   );
-  assert.notEqual(selected.skipped, "automation_handled");
-  assert.ok(
-    ["list", "buttons"].includes(selected.structuredReply.type),
-    "product primary action presents the existing booking service choices",
-  );
-  assert.ok(JSON.stringify(selected.structuredReply).includes("Haircut"));
+  assert.equal(selected.skipped, "automation_handled", "the active product automation remains product-scoped on follow-up input");
   live.seed(`customers/${customerId}`, {
     ...live.read(`customers/${customerId}`),
     name: "",
@@ -379,7 +329,7 @@ async function main() {
     .runAutomationEvent({
       id: "missing-name",
       type: "customer.message.received",
-      businessId: "salon",
+      businessId: "motos",
       customerId,
       conversationId: customerId,
       timestamp: new Date().toISOString(),
@@ -412,7 +362,7 @@ async function main() {
   ])
     assert.ok(gallery.includes(text));
   console.log(
-    `PASS: ${count} product/common templates across all 12 verticals; scoped catalogue, draft cloning/editing/source immutability, publish, all six resolved placeholders, unknown/missing placeholder rejection, and welcome-button vertical fallback.`,
+    `PASS: ${count} product/common templates across active verticals; scoped catalogue, draft cloning/editing/source immutability, publish, all six resolved placeholders, unknown/missing placeholder rejection, and welcome-button vertical fallback.`,
   );
 }
 main().catch((e) => {

@@ -80,6 +80,7 @@ export async function processIncomingMessage(
   business: Business,
   message: IncomingWhatsAppMessage,
   debug?: IncomingMessageDebug,
+  request?: Request,
 ) {
   const call = <T>(step: string, action: () => T | Promise<T>) => {
     const stage: DebugStage | undefined =
@@ -150,7 +151,7 @@ export async function processIncomingMessage(
             selectionTitle: input.selectionTitle,
           }),
       ...(input.location === undefined ? {} : { location: input.location }),
-    }),
+    }, request),
   );
   if (!claim)
     return early("duplicate_message", {
@@ -162,7 +163,11 @@ export async function processIncomingMessage(
     const identity = await call("resolveWhatsAppIdentity", () =>
       resolveWhatsAppIdentity(from),
     );
-    if (!identity) {
+    const retailIdentityAction =
+      business.vertical === "retail" &&
+      (input.selectionId === "retail_menu_track" ||
+        /^(track order|my orders|order history)$/i.test(input.text.trim()));
+    if (!identity && (business.vertical !== "retail" || retailIdentityAction)) {
       const token = await call("createOrReuseLinkSession", () =>
         createOrReuseLinkSession(
           from,
@@ -179,7 +184,7 @@ export async function processIncomingMessage(
       );
       reportDebug(debug?.trace, "[WA_REPLY_READY]", { step: "linkingReply" });
       // Gate responses never include the link capability or a UID in the HTTP webhook response.
-      if (!(await call("hasStoredReply", () => hasStoredReply(messageId)))) {
+      if (!(await call("hasStoredReply", () => hasStoredReply(messageId, business.id, request)))) {
         const sent = await call("sendWhatsAppMessage", () =>
           sendWhatsAppMessage({
             phoneNumberId: business.whatsappPhoneNumberId,
@@ -198,6 +203,7 @@ export async function processIncomingMessage(
         );
         await call("storeOutgoingMessage", () =>
           storeOutgoingMessage({
+            request,
             incomingMessageId: messageId,
             businessId: business.id,
             vertical: business.vertical,
@@ -221,9 +227,10 @@ export async function processIncomingMessage(
     await call("getOrCreateCustomer", () =>
       getOrCreateCustomer({ businessId: business.id, phone: from }),
     );
-    await call("touchLinkedCustomer", () =>
-      touchLinkedCustomer(business.id, identity),
-    );
+    if (identity)
+      await call("touchLinkedCustomer", () =>
+        touchLinkedCustomer(business.id, identity),
+      );
     let conversation = await call("getOrCreateConversation", () =>
       getOrCreateConversation({
         businessId: business.id,
@@ -366,7 +373,7 @@ export async function processIncomingMessage(
           ).name
         : "";
     const result =
-      !prepared && isIdentityGreeting(input) && routed.reply.type !== "product_list" && routed.reply.type !== "product_sequence"
+      !prepared && business.vertical !== "retail" && isIdentityGreeting(input) && routed.reply.type !== "product_list" && routed.reply.type !== "product_sequence"
         ? {
             ...routed,
             reply: {
@@ -425,7 +432,7 @@ export async function processIncomingMessage(
     const sequence = reply.type === "product_sequence" ? reply : null;
     const sendReply = async (outgoingReply: MessagingReply, key = "final", index?: number) => {
       const outgoingKey = key === "final" ? messageId : `${messageId}:${key}`;
-      if (await call("hasStoredReply", () => hasStoredReply(outgoingKey))) return;
+      if (await call("hasStoredReply", () => hasStoredReply(outgoingKey, business.id, request))) return;
       const sent = await call("sendWhatsAppMessage", () =>
         sendWhatsAppMessage({
           phoneNumberId: business.whatsappPhoneNumberId,
@@ -446,6 +453,7 @@ export async function processIncomingMessage(
       if (reply.type === "product_sequence" && !sent?.messages?.[0]?.id) throw new Error("WhatsApp product sequence send was not confirmed.");
       await call("storeOutgoingMessage", () =>
         storeOutgoingMessage({
+          request,
           incomingMessageId: outgoingKey,
           businessId: business.id,
           vertical: result.vertical,
@@ -462,7 +470,7 @@ export async function processIncomingMessage(
     };
     if (sequence) await deliverProductSequence(sequence, sendReply, {
       skipped: await getProductSequenceSkips(claim),
-      isNativeSent: index => hasStoredReply(`${messageId}:catalog:${index}`),
+      isNativeSent: index => hasStoredReply(`${messageId}:catalog:${index}`, business.id, request),
       onSkip: (index, skip) => storeProductSequenceSkip(claim, index, skip),
     });
     else await sendReply(reply);

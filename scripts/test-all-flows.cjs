@@ -5,12 +5,11 @@ const suites = [
   'eats-product-approval',
   'native-product-sequence',
   'whatsapp-account-metadata',
-  'eats-catalog', 'product-automation-templates', 'active-vertical-registry', 'automation-builder', 'internal-dashboard', 'client-operations', 'whatsapp-setup', 'entitlements', 'click-first', 'demo-linking',
+  'eats-catalog', 'product-automation-templates', 'active-vertical-registry', 'automation-builder', 'internal-dashboard', 'client-operations', 'whatsapp-setup', 'entitlements', 'demo-linking',
   'whatsapp-identity', 'webhook-debug', 'webhook-signature',
   'operations', 'whatsapp-dashboard', 'admin-services', 'integration-api',
   'catalog-services',
-  'cabs-flow', 'retail-flow', 'ecom-flow', 'garage-flow', 'meds-flow', 'meat-flow',
-  'expert-flow', 'gaming-flow', 'sport-flow', 'motos-flow', 'salon-flow', 'eats-flow',
+  'retail-flow', 'motos-flow', 'eats-flow',
   'interactive-messaging', 'messaging', 'domain-services', 'dev-eats',
 ];
 for (const suite of suites) {

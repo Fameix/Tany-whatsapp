@@ -1,8 +1,7 @@
 import "server-only";
-import { adminDb } from "@/lib/firebase-admin";
-import { requireWhatsAppEntitlement } from "@/lib/subscriptions/entitlements";
+import { databaseMode, runtimeRepositoryFor } from "@/lib/data/repository";
 import { accountAccessToken } from "@/lib/whatsapp/credentials";
-import { documentId } from "@/lib/messaging/services/shared";
+import { adminDb } from "@/lib/firebase-admin";
 
 function activeStatus(status: unknown) {
   return status === "connected" || status === "configured";
@@ -10,16 +9,20 @@ function activeStatus(status: unknown) {
 
 /** Existing businesses without wizard records keep their current integration. */
 export async function automationAccountReady(businessId: string, phoneNumberId: string) {
-  const [canonical, matches, owned] = await Promise.all([
-    adminDb.collection("whatsapp_accounts").doc(documentId(businessId)).get(),
-    adminDb.collection("whatsapp_accounts").where("phoneNumberId", "==", phoneNumberId).get(),
-    adminDb.collection("whatsapp_accounts").where("businessId", "==", businessId).get(),
+  const repository = await runtimeRepositoryFor();
+  const [canonical, match] = await Promise.all([
+    repository.getWhatsAppAccount(businessId),
+    repository.findWhatsAppAccountByPhoneNumberId(phoneNumberId),
   ]);
+  if (databaseMode() !== "postgres" && databaseMode() !== "dual-write") {
+    const allMatches = await adminDb.collection("whatsapp_accounts").where("phoneNumberId", "==", phoneNumberId).get();
+    if (allMatches.docs.some(doc => doc.data().businessId !== businessId) || allMatches.docs.length > 1) return false;
+  }
   // Preserve legacy businesses that have not created any setup/account record.
-  if (!canonical.exists && matches.empty && owned.empty) return true;
-  if (canonical.exists && (canonical.data()?.businessId !== businessId || !activeStatus(canonical.data()?.status) || canonical.data()?.phoneNumberId !== phoneNumberId)) return false;
-  if (matches.docs.length !== 1) return false;
-  const data = matches.docs[0].data();
+  if (!canonical && !match) return true;
+  if (canonical && (!activeStatus(canonical.status) || canonical.phoneNumberId !== phoneNumberId)) return false;
+  if (!match) return false;
+  const data = match;
   // Connected manual records need no wizard proof. Incomplete and inactive
   // records never qualify; client activation still uses the wizard service.
   return data.businessId === businessId && activeStatus(data.status) &&
@@ -28,22 +31,19 @@ export async function automationAccountReady(businessId: string, phoneNumberId: 
     typeof data.displayPhone === "string" && /^\+?[1-9]\d{7,14}$/.test(data.displayPhone.replace(/[\s()-]/g, ""));
 }
 export async function sendingAccessToken(phoneNumberId: string) {
-  const accounts = await adminDb.collection("whatsapp_accounts").where("phoneNumberId", "==", phoneNumberId).get();
-  if (accounts.empty) {
-    // A paused/reconfigured wizard account must not fall back to global credentials
-    // through the business profile's previous phone mapping.
-    const businesses = await adminDb.collection("businesses").where("whatsappPhoneNumberId", "==", phoneNumberId).get();
-    for (const business of businesses.docs) {
-      if ((await adminDb.collection("whatsapp_accounts").doc(business.id).get()).exists)
-        throw new Error("WhatsApp account is not active.");
-    }
-    return process.env.META_ACCESS_TOKEN || null;
+  const repository = await runtimeRepositoryFor();
+  const account = await repository.findWhatsAppAccountByPhoneNumberId(phoneNumberId);
+  // A sender is usable only when its single, business-owned account is present.
+  // The Firestore deployment retains its legacy server token for businesses
+  // that have never created a canonical account record. Postgres mode requires
+  // a tenant-owned secret reference and never falls back to Firestore or global credentials.
+  if (!account) {
+    if (databaseMode() === "firestore" && process.env.META_ACCESS_TOKEN) return process.env.META_ACCESS_TOKEN;
+    throw new Error("WhatsApp account ownership is unavailable.");
   }
-  if (accounts.docs.length !== 1) throw new Error("WhatsApp account mapping is unavailable.");
-  const account = accounts.docs[0].data();
-  await requireWhatsAppEntitlement(account.businessId);
-  const business = (await adminDb.collection("businesses").doc(account.businessId).get()).data();
+  const business = await repository.getBusiness(account.businessId);
   if (!activeStatus(account.status) || business?.active !== true || business.whatsappPhoneNumberId !== phoneNumberId || !(await automationAccountReady(account.businessId, phoneNumberId)))
     throw new Error("WhatsApp account is not active.");
-  return accountAccessToken(account.tokenSecretName, account.businessId);
+  if (!account.tokenSecretName) throw new Error("WhatsApp account secret reference is unavailable.");
+  return await accountAccessToken(account.tokenSecretName, account.businessId);
 }

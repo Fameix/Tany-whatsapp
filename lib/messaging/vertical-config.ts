@@ -22,6 +22,18 @@ export const verticalConfig = {
   sport: { key: "sport", label: "Tany Sport", startState: "sport_start", defaultReply: "Sport request received" },
 } as const satisfies { [K in TanyVertical]: VerticalConfig<K> };
 
+/**
+ * The single product-availability policy used by the dashboard and backend.
+ * Keep every vertical in `verticalConfig` so unreleased products remain visible,
+ * but only entries here may be selected or receive WhatsApp functionality.
+ */
+export const activeTanyVerticals = ["motos", "eats", "retail"] as const satisfies readonly TanyVertical[];
+export type ActiveTanyVertical = (typeof activeTanyVerticals)[number];
+
 export function isTanyVertical(value: unknown): value is TanyVertical {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(verticalConfig, value);
+}
+
+export function isActiveTanyVertical(value: unknown): value is ActiveTanyVertical {
+  return typeof value === "string" && (activeTanyVerticals as readonly string[]).includes(value);
 }

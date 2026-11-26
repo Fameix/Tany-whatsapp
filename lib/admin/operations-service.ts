@@ -5,6 +5,10 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getAdminBusiness, listBusinessProfiles } from "@/lib/admin/services";
 import { getWhatsAppOverview, readWhatsAppOverviewForAdmin } from "@/lib/admin/whatsapp-service";
 import { firestoreTemplateProvider } from "@/lib/admin/template-provider";
+import { databaseMode, runtimeRepositoryFor } from "@/lib/data/repository";
+import { listRuntimeRecords, getRuntimeRecord, putRuntimeRecord, postgresRuntimeMode } from "@/lib/messaging/services/postgres-runtime-records";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
+import { randomUUID } from "node:crypto";
 import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
 import type { AdminBusiness } from "@/lib/admin/types";
 import type {
@@ -96,6 +100,14 @@ async function requireBusiness(id: string) {
   return business;
 }
 async function rows(collection: string, businessId: string) {
+  if (postgresRuntimeMode()) {
+    const generic = await listRuntimeRecords<Record<string, unknown> & { id: string; businessId: string }>(collection, businessId);
+    if (collection !== "messages") return generic.map(data => ({ id: data.id, data }));
+    const messages = await new PostgresMessagingRepository().listRuntimeMessages(businessId);
+    const merged = new Map<string, Record<string, unknown>>();
+    for (const message of [...generic, ...messages]) merged.set(message.id, message);
+    return [...merged.values()].map(data => ({ id: String(data.id), data }));
+  }
   const result = await adminDb
     .collection(collection)
     .where("businessId", "==", businessId)
@@ -127,6 +139,7 @@ async function businessOperations(
   adminRead = false,
 ): Promise<OperationsData> {
   const businessId = business.id;
+  const postgresMode = databaseMode() === "postgres" || databaseMode() === "dual-write";
   const [
     messages,
     conversations,
@@ -135,9 +148,9 @@ async function businessOperations(
     campaigns,
     overview,
     config,
-    setup,
+    setupRecord,
     receipts,
-    accountRows,
+    firestoreAccountRows,
   ] = await Promise.all([
     rows("messages", businessId),
     rows("conversations", businessId),
@@ -145,16 +158,20 @@ async function businessOperations(
     firestoreTemplateProvider.list({ businessId, businessName: business.name }),
     rows("campaigns", businessId),
     adminRead ? readWhatsAppOverviewForAdmin(businessId) : getWhatsAppOverview(businessId),
-    adminDb
+    postgresMode ? getRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("whatsappOperations", businessId, "config") : adminDb
       .collection("businesses")
       .doc(businessId)
       .collection("whatsappOperations")
       .doc("config")
       .get(),
-    adminDb.collection("whatsapp_accounts").doc(businessId).get(),
+    postgresMode ? (await runtimeRepositoryFor()).getWhatsAppAccount(businessId) : adminDb.collection("whatsapp_accounts").doc(businessId).get(),
     rows("message_delivery_events", businessId),
-    rows("whatsapp_accounts", businessId),
+    postgresMode ? Promise.resolve([]) : rows("whatsapp_accounts", businessId),
   ]);
+  const setup = (postgresMode ? setupRecord : (setupRecord as FirebaseFirestore.DocumentSnapshot).data()) as Record<string, unknown> | undefined;
+  const accountRows = postgresMode
+    ? setup ? [{ id: String(setup.id ?? businessId), data: setup }] : []
+    : firestoreAccountRows as Array<{ id: string; data: Record<string, unknown> }>;
   const meta = {
     businessId,
     business: business.name,
@@ -266,11 +283,11 @@ async function businessOperations(
       audience: str(data.audience, 240),
       schedule: at(data.schedule),
     }));
-  const configuration = obj(config.data());
+  const configuration = obj(postgresMode ? config : (config as FirebaseFirestore.DocumentSnapshot).data());
   return {
     businessId,
     businessName: business.name,
-    setupRequests: setup.data()?.businessId === businessId && setup.data()?.setupType === "new" ? [{ businessId, business: business.name, displayName: str(setup.data()?.displayName, 120), phone: str(setup.data()?.displayPhone, 30), status: str(setup.data()?.status, 30), at: at(setup.data()?.createdAt) }] : [],
+    setupRequests: setup?.businessId === businessId && setup?.setupType === "new" ? [{ businessId, business: business.name, displayName: str(setup.displayName, 120), phone: str(setup.displayPhone, 30), status: str(setup.status, 30), at: at(setup.createdAt) }] : [],
     messages: projectedMessages,
     conversations: projectedConversations,
     contacts: customers
@@ -324,7 +341,7 @@ async function businessOperations(
         displayName: overview.displayName ?? business.name,
         phoneNumberId: overview.phoneNumberId,
         wabaId: overview.wabaId,
-        status: !business.active ? "Inactive" : business.whatsappPhoneNumberId ? "Configured · unverified" : "Not connected",
+        status: !business.active ? "Inactive" : business.whatsappPhoneNumberId && !business.whatsappPhoneNumberId.startsWith("PENDING_") ? "Configured · unverified" : "Not connected",
         quality: overview.qualityRating ?? "Unknown",
         subscription: overview.webhookSubscription ?? "Unknown",
         at:
@@ -410,6 +427,10 @@ export async function saveOperationsConfiguration(
       obj(data.automations)[rule.id] === true,
     ]),
   );
+  if (postgresRuntimeMode()) {
+    await putRuntimeRecord("whatsappOperations", { id: "config", businessId, settings, automations, updatedAt: new Date() });
+    return;
+  }
   await adminDb
     .collection("businesses")
     .doc(businessId)
@@ -435,16 +456,17 @@ export async function createCampaignDraft(businessId: string, input: unknown, in
     )
   )
     throw new Error("Choose an approved template from this business");
+  const campaignData = {
+    businessId, name,
+    template: str(data.template, 120), audience: str(data.audience, 240),
+    schedule: at(data.schedule), status: "draft", updatedAt: new Date(),
+  };
+  if (postgresRuntimeMode()) { await putRuntimeRecord("campaigns", { ...campaignData, id: randomUUID() }); return; }
   await adminDb
     .collection("campaigns")
     .doc()
     .create({
-      businessId,
-      name,
-      template: str(data.template, 120),
-      audience: str(data.audience, 240),
-      schedule: at(data.schedule),
-      status: "draft",
+      ...campaignData,
       updatedAt: serverTimestamp(),
     });
 }
@@ -457,6 +479,13 @@ export async function setConversationHandoff(
   if (!internalConsole) await requireWhatsAppEntitlement(businessId);
   await requireBusiness(businessId);
   if (typeof human !== "boolean") throw new Error("Invalid handoff mode");
+  if (postgresRuntimeMode()) {
+    const conversation = await getRuntimeRecord<Record<string, unknown> & { id: string; businessId: string; customerPhone: string; state: string }>("conversations", businessId, documentId(conversationId));
+    if (!conversation) throw new Error("Conversation not found");
+    const service = await import("@/lib/messaging/services/conversation-service");
+    await service.updateConversationState({ businessId, customerPhone: conversation.customerPhone, state: conversation.state, status: human ? "handed_off" : "active" });
+    return;
+  }
   const ref = adminDb
     .collection("conversations")
     .doc(documentId(conversationId));

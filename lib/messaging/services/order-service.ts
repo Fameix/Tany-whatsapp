@@ -1,5 +1,7 @@
-import { writeEntityEvent } from "@/lib/automations/events";
+import { emitEntityEvent, writeEntityEvent } from "@/lib/automations/events";
+import { randomUUID } from "node:crypto";
 import { adminDb } from "@/lib/firebase-admin";
+import { Timestamp } from "firebase-admin/firestore";
 import { mergeConversationContext } from "@/lib/messaging/context";
 import type {
   Order,
@@ -17,6 +19,7 @@ import {
   readDocument,
   serverTimestamp,
 } from "@/lib/messaging/services/shared";
+import { getRuntimeRecordById, mutateRuntimeRecordById, postgresRuntimeMode, putRuntimeRecord } from "@/lib/messaging/services/postgres-runtime-records";
 
 export type OrderItemInput = Omit<OrderItem, "totalPrice" | "metadata"> &
   Partial<Pick<OrderItem, "totalPrice" | "metadata">>;
@@ -71,6 +74,25 @@ export async function createDraftOrder({
 }): Promise<Order> {
   const conversationId = customerDocumentId(businessId, customerPhone);
   assertVertical(vertical);
+  if (postgresRuntimeMode()) {
+    const now = Timestamp.now(); const id = randomUUID();
+    const created: Order = { id, businessId, customerPhone, vertical, items: [], subtotal: 0, deliveryFee: 0, discount: 0, total: 0, currency: "INR", status: "draft", location: null, paymentId: null, createdAt: now, updatedAt: now };
+    if (reuseConversationDraft) {
+      const { getConversation, updateConversationState } = await import("@/lib/messaging/services/conversation-service");
+      const conversation = await getConversation({ businessId, customerPhone });
+      if (!conversation || conversation.vertical !== vertical) throw new Error("Order conversation not found or vertical does not match");
+      const existingId = conversation.context.orderId;
+      if (typeof existingId === "string") {
+        const existing = await getRuntimeRecordById<Order & Record<string, unknown>>("orders", existingId);
+        if (!existing || existing.businessId !== businessId || existing.customerPhone !== customerPhone || existing.vertical !== vertical) throw new Error("Conversation order does not match customer and business");
+        return existing;
+      }
+      await putRuntimeRecord("orders", created);
+      await updateConversationState({ businessId, customerPhone, state: conversation.state, context: mergeConversationContext(conversation.context, { orderId: id }) });
+    } else await putRuntimeRecord("orders", created);
+    await emitEntityEvent("order.created", created);
+    return created;
+  }
   const ref = adminDb.collection("orders").doc();
   const now = serverTimestamp();
   const data: Omit<Order, "id"> = {
@@ -136,7 +158,7 @@ export async function createDraftOrder({
   return created;
 }
 
-export function addOrderItem({
+export async function addOrderItem({
   orderId,
   item,
 }: {
@@ -144,6 +166,11 @@ export function addOrderItem({
   item: OrderItemInput;
 }): Promise<Order> {
   const normalized = normalizeItem(item);
+  if (postgresRuntimeMode()) return (await mutateRuntimeRecordById<Order & Record<string, unknown>>("orders", orderId, current => {
+    const items = [...current.items]; const index = items.findIndex(entry => entry.id === normalized.id);
+    if (index === -1) items.push(normalized); else items[index] = normalizeItem({ ...normalized, quantity: items[index].quantity + normalized.quantity });
+    return { ...current, items, ...totals(items, current.deliveryFee, current.discount), updatedAt: Timestamp.now() };
+  })).current;
   return mutateDocument<Order>(reference(orderId), (current) => {
     const items = [...current.items];
     const index = items.findIndex((entry) => entry.id === normalized.id);
@@ -164,6 +191,15 @@ export async function updateOrder({
   orderId: string;
   data: OrderUpdate;
 }): Promise<Order> {
+  if (postgresRuntimeMode()) {
+    const result = await mutateRuntimeRecordById<Order & Record<string, unknown>>("orders", orderId, current => {
+      const items = data.items?.map(normalizeItem) ?? current.items;
+      if (new Set(items.map(item => item.id)).size !== items.length) throw new Error("Duplicate order item IDs");
+      return { ...current, ...definedFields({ items, ...totals(items, data.deliveryFee ?? current.deliveryFee, data.discount ?? current.discount), status: data.status, location: data.location, paymentId: data.paymentId, ...(data.status && data.status !== current.status ? { automationRevision: (current.automationRevision ?? 0) + 1 } : {}) }), updatedAt: Timestamp.now() } as Order & Record<string, unknown>;
+    });
+    if (result.previous.status !== result.current.status) await emitEntityEvent("order.status.changed", result.current, { previousStatus: result.previous.status });
+    return result.current;
+  }
   return mutateDocument<Order>(
     reference(orderId),
     (current) => {
@@ -194,7 +230,8 @@ export async function updateOrder({
   );
 }
 
-export function getOrder(orderId: string): Promise<Order | null> {
+export async function getOrder(orderId: string): Promise<Order | null> {
+  if (postgresRuntimeMode()) return getRuntimeRecordById<Order & Record<string, unknown>>("orders", documentId(orderId));
   return readDocument<Order>(reference(orderId));
 }
 export function setOrderStatus({

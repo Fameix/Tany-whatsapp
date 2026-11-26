@@ -1,16 +1,15 @@
 import "server-only";
-import { adminDb } from "@/lib/firebase-admin";
-import { documentId } from "@/lib/messaging/services/shared";
+import { databaseMode, runtimeRepositoryFor } from "@/lib/data/repository";
 import { accountAccessToken } from "@/lib/whatsapp/credentials";
 
 export type CatalogReview = { status: string | null; availability: string | null };
 /** Missing permission/network/review data means ordinary-menu fallback, never
  * a claim of approval. Credentials and provider response bodies are not logged. */
 export async function getWhatsAppCatalogReviews(businessId: string, catalogId: string): Promise<Map<string, CatalogReview> | null> {
-  const account = (await adminDb.collection("whatsapp_accounts").doc(documentId(businessId)).get()).data();
+  const account = await (await runtimeRepositoryFor()).getWhatsAppAccount(businessId);
   if (!account || account.businessId !== businessId || account.catalogId !== catalogId) return null;
-  const scoped = typeof account.tokenSecretName === "string" ? accountAccessToken(account.tokenSecretName, businessId) : null;
-  const token = process.env.META_ACCESS_TOKEN || scoped;
+  const scoped = typeof account.tokenSecretName === "string" ? await accountAccessToken(account.tokenSecretName, businessId) : null;
+  const token = databaseMode() === "postgres" || databaseMode() === "dual-write" ? scoped : process.env.META_ACCESS_TOKEN || scoped;
   if (!token) return null;
   const reviews = new Map<string, CatalogReview>();
   const cursors = new Set<string>();

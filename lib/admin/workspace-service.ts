@@ -3,6 +3,8 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getAdminBusiness, getBusinessStats } from "@/lib/admin/services";
 import { documentId } from "@/lib/messaging/services/shared";
 import { AdminValidationError } from "@/lib/admin/validation";
+import { databaseMode } from "@/lib/data/repository";
+import { listRuntimeRecords } from "@/lib/messaging/services/postgres-runtime-records";
 
 export const workspaceCollections = [
   "orders",
@@ -38,6 +40,8 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.slice(0, 240) : "";
 }
 function timestamp(value: unknown): string | null {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
+  if (typeof value === "string" && Number.isFinite(Date.parse(value))) return new Date(value).toISOString();
   if (
     !value ||
     typeof value !== "object" ||
@@ -61,13 +65,12 @@ export async function listWorkspaceRecords(
     throw new AdminValidationError({
       collection: "Unsupported workspace collection.",
     });
-  const snapshot = await adminDb
-    .collection(collection)
-    .where("businessId", "==", businessId)
-    .get();
-  return snapshot.docs
-    .flatMap((doc) => {
-      const data = doc.data();
+  const postgresMode = databaseMode() === "postgres" || databaseMode() === "dual-write";
+  const rows: Array<Record<string, unknown> & { id: string; businessId: string }> = postgresMode
+    ? await listRuntimeRecords<Record<string, unknown> & { id: string; businessId: string }>(collection, businessId)
+    : (await adminDb.collection(collection).where("businessId", "==", businessId).get()).docs.map(doc => ({ ...doc.data(), id: doc.id, businessId } as Record<string, unknown> & { id: string; businessId: string }));
+  return rows
+    .flatMap((data) => {
       if (data.businessId !== businessId) return [];
       const amount =
         collection === "orders"
@@ -85,7 +88,7 @@ export async function listWorkspaceRecords(
         .filter(Boolean);
       return [
         {
-          id: doc.id,
+          id: data.id,
           businessId,
           collection,
           title:
@@ -129,6 +132,10 @@ export async function listWorkspaceRecords(
 
 export async function getWorkspaceStats(businessId: string) {
   const stats = await getBusinessStats(documentId(businessId));
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
+    const customers = await listRuntimeRecords("customers", businessId);
+    return { ...stats, customers: customers.length };
+  }
   const customers = await adminDb
     .collection("customers")
     .where("businessId", "==", businessId)

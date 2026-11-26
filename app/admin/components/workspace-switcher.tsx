@@ -2,6 +2,7 @@ import "server-only";
 import { connection } from "next/server";
 import { listBusinessProfiles } from "@/lib/admin/services";
 import { requireDashboardAccess } from "@/lib/admin/dashboard-session";
+import { isActiveTanyVertical } from "@/lib/messaging/vertical-config";
 import type { AdminBusiness, WorkspaceOption } from "@/lib/admin/types";
 import { WorkspaceMenu } from "./workspace-menu";
 
@@ -31,7 +32,7 @@ export async function WorkspaceSwitcher({
     const profiles = await listBusinessProfiles();
     options = profiles
       // Active workspaces remain accessible while their Meta connection is being set up.
-      .filter((profile) => profile.active)
+      .filter((profile) => profile.active && isActiveTanyVertical(profile.vertical))
       .map(({ id, name, vertical, active }) => ({
         id,
         name,

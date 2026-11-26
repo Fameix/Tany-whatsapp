@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { adminDb } from "@/lib/firebase-admin";
+import { automationPersistence, postgresAutomationAuthoritative } from "@/lib/automations/persistence";
 import {
   customerDocumentId,
   serverTimestamp,
@@ -10,23 +11,12 @@ export const eventKey = (...values: string[]) =>
   createHash("sha256").update(JSON.stringify(values)).digest("hex");
 /** Durable normalized events; no webhook-specific or vertical-specific logic. */
 export async function queueAutomationEvent(event: AutomationEvent) {
-  const active = await adminDb
-    .collection("automations")
-    .where("businessId", "==", event.businessId)
-    .where("status", "==", "active")
-    .get();
-  if (active.empty) return;
-  const ref = adminDb
-    .collection("automation_events")
-    .doc(eventKey(event.businessId, event.id));
-  await adminDb.runTransaction(async (tx) => {
-    if (!(await tx.get(ref)).exists)
-      tx.create(ref, {
-        ...event,
-        automationIds: active.docs.map((d) => d.id),
-        status: "pending",
-        createdAt: serverTimestamp(),
-      });
+  const repository = automationPersistence();
+  const active = await repository.list("automations", event.businessId, "active");
+  if (!active.length) return;
+  await repository.create("automation_events", {
+    ...event, id: eventKey(event.businessId, event.id), businessId: event.businessId,
+    automationIds: active.map(row => row.id), status: "pending", createdAt: new Date().toISOString(),
   });
 }
 export async function emitEntityEvent(
@@ -66,6 +56,17 @@ export async function writeEntityEvent(
   },
   payload: Record<string, unknown> = {},
 ) {
+  if (postgresAutomationAuthoritative()) {
+    await queueAutomationEvent({
+      id: `${type}:${entity.id}:${entity.automationRevision ?? 0}:${entity.status ?? "created"}`,
+      type, businessId: entity.businessId,
+      customerId: customerDocumentId(entity.businessId, entity.customerPhone),
+      conversationId: customerDocumentId(entity.businessId, entity.customerPhone),
+      entityId: entity.id, timestamp: new Date().toISOString(),
+      payload: { ...payload, status: entity.status ?? "" }, source: "domain",
+    });
+    return;
+  }
   const active = await tx.get(
     adminDb
       .collection("automations")

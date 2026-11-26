@@ -1,12 +1,11 @@
 import { isTanyVertical } from "@/lib/messaging/vertical-config";
-import {
-  cloneProductTemplate,
-} from "@/lib/automations/product-templates";
-import { assertVerticalAutomationAllowed, templatesForRegisteredVertical } from "@/lib/automations/vertical-registry";
+import { assertVerticalAutomationAllowed, templateForRegisteredProduct, templatesForEnabledProducts, type ActiveAutomationVertical } from "@/lib/automations/vertical-registry";
 import "server-only";
-import { adminDb } from "@/lib/firebase-admin";
+import { randomUUID } from "node:crypto";
+import { automationPersistence } from "@/lib/automations/persistence";
+import { getEnabledProducts, requireWhatsAppEntitlement } from "@/lib/subscriptions/entitlements";
 import { getBusinessConfig } from "@/lib/messaging/services/business-config-service";
-import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
+import { documentId } from "@/lib/messaging/services/shared";
 import {
   validateAutomation,
   type Automation,
@@ -15,10 +14,22 @@ import {
 export async function requireAutomationBusiness(id: string) {
   const business = await getBusinessConfig(documentId(id));
   if (!business) throw new Error("Business not found.");
+  await requireWhatsAppEntitlement(id);
   return business;
 }
+export class ProductAccessError extends Error {
+  readonly status = 403;
+  constructor() { super("This automation product is not enabled for this business."); }
+}
+async function automationProduct(businessId: string, business: { vertical: unknown }): Promise<ActiveAutomationVertical> {
+  const enabled = await getEnabledProducts(businessId);
+  if (!isTanyVertical(business.vertical) || !enabled.includes(business.vertical as ActiveAutomationVertical)) throw new ProductAccessError();
+  return business.vertical as ActiveAutomationVertical;
+}
 const iso = (v: unknown) =>
-  v && typeof v === "object" && "toDate" in v
+  v instanceof Date
+    ? v.toISOString()
+    : v && typeof v === "object" && "toDate" in v
     ? (v as { toDate(): Date }).toDate().toISOString()
     : typeof v === "string"
       ? v
@@ -60,8 +71,8 @@ export async function automationDashboard(businessId: string) {
   const business = await dashboardStage(businessId, "business", () =>
     requireAutomationBusiness(businessId),
   );
-  if (!isTanyVertical(business.vertical))
-    throw new Error("Unsupported business product.");
+  const product = await automationProduct(businessId, business);
+  const enabledProducts = await getEnabledProducts(businessId);
   if (process.env.NODE_ENV === "development")
     console.info("[AUTOMATION_UNUSED_DEPENDENCIES]", {
       businessId,
@@ -69,30 +80,19 @@ export async function automationDashboard(businessId: string) {
       subscription: false,
       entitlement: false,
     });
+  const repository = automationPersistence();
   const [automations, runs, templates] = await Promise.all([
-    dashboardStage(businessId, "automations", () =>
-      adminDb
-        .collection("automations")
-        .where("businessId", "==", businessId)
-        .get(),
-    ),
-    dashboardStage(businessId, "automation_runs", () =>
-      adminDb
-        .collection("automation_runs")
-        .where("businessId", "==", businessId)
-        .get(),
-    ),
-    dashboardStage(businessId, "templates", () =>
-      adminDb.collection("templates").where("businessId", "==", businessId).get(),
-    ),
+    dashboardStage(businessId, "automations", () => repository.list("automations", businessId)),
+    dashboardStage(businessId, "automation_runs", () => repository.list("automation_runs", businessId)),
+    dashboardStage(businessId, "templates", () => repository.list("templates", businessId)),
   ]);
   return {
-    vertical: business.vertical,
+    vertical: product,
     // The dashboard intentionally exposes only the active registry products.
     // Legacy flows remain service-compatible without being offered as new templates.
-    automationTemplates: templatesForRegisteredVertical(business.vertical),
-    automations: automations.docs.map((d) => {
-      const v = d.data();
+    automationTemplates: templatesForEnabledProducts(enabledProducts),
+    automations: automations.map((d) => {
+      const v = d;
       return {
         ...validateAutomation(v),
         id: d.id,
@@ -103,9 +103,9 @@ export async function automationDashboard(businessId: string) {
         publishedAt: iso(v.publishedAt),
       } as Automation;
     }),
-    runs: runs.docs
+    runs: runs
       .map((d) => {
-        const v = d.data();
+        const v = d;
         return {
           id: d.id,
           automationId: v.automationId,
@@ -119,12 +119,12 @@ export async function automationDashboard(businessId: string) {
         } as Run;
       })
       .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? "")),
-    templates: templates.docs
-      .filter((d) => d.data().status === "approved")
+    templates: templates
+      .filter((d) => d.status === "approved")
       .map((d) => ({
         id: d.id,
-        name: String(d.data().name ?? "Template"),
-        body: String(d.data().body ?? ""),
+        name: String(d.name ?? "Template"),
+        body: String(d.body ?? ""),
       })),
   };
 }
@@ -133,40 +133,40 @@ export async function saveAutomation(
   id: string | undefined,
   input: unknown,
   enforceVertical = true,
+  productOverride?: ActiveAutomationVertical,
 ) {
   const business = await requireAutomationBusiness(businessId);
+  const defaultProduct = await automationProduct(businessId, business);
+  const enabledProducts = await getEnabledProducts(businessId);
   const validated = validateAutomation(input);
-  const data = enforceVertical ? assertVerticalAutomationAllowed(business.vertical, validated) : validated;
-  const ref = id
-    ? adminDb.collection("automations").doc(documentId(id))
-    : adminDb.collection("automations").doc();
-  await adminDb.runTransaction(async (tx) => {
-    const current = (await tx.get(ref)).data();
-    if (id && (!current || current.businessId !== businessId))
-      throw new Error("Automation not found.");
-    tx.set(ref, {
-      ...data,
-      businessId,
-      status: "draft",
-      createdAt: current?.createdAt ?? serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      publishedAt: current?.publishedAt ?? null,
-    });
+  const product = productOverride ?? validated.product ?? defaultProduct;
+  if (!enabledProducts.includes(product)) throw new ProductAccessError();
+  const data = enforceVertical ? assertVerticalAutomationAllowed(product, validated) : validated;
+  const repository = automationPersistence();
+  const automationId = id ? documentId(id) : randomUUID();
+  const current = id ? await repository.get("automations", businessId, automationId) : null;
+  if (id && !current) throw new Error("Automation not found.");
+  const now = new Date().toISOString();
+  await repository.upsert("automations", {
+    ...data, id: automationId, businessId, product: current?.product ?? product,
+    status: "draft", createdAt: current?.createdAt ?? now, updatedAt: now,
+    publishedAt: current?.publishedAt ?? null,
   });
-  return ref.id;
+  return automationId;
 }
 export async function changeAutomation(
   businessId: string,
   id: string,
   operation: "publish" | "pause" | "resume" | "delete" | "duplicate",
 ) {
-  await requireAutomationBusiness(businessId);
-  const ref = adminDb.collection("automations").doc(documentId(id));
-  const copy = adminDb.collection("automations").doc();
-  return adminDb.runTransaction(async (tx) => {
-    const current = (await tx.get(ref)).data();
-    if (!current || current.businessId !== businessId)
-      throw new Error("Automation not found.");
+  const business = await requireAutomationBusiness(businessId);
+  const enabledProducts = await getEnabledProducts(businessId);
+  const repository = automationPersistence();
+  const automationId = documentId(id);
+  const current = await repository.get("automations", businessId, automationId);
+  if (!current) throw new Error("Automation not found.");
+    const product = current.product ?? business.vertical;
+    if (!isTanyVertical(product) || !enabledProducts.includes(product as ActiveAutomationVertical)) throw new ProductAccessError();
     const data = validateAutomation(current);
     if (["publish", "resume"].includes(operation)) {
       if (
@@ -175,47 +175,51 @@ export async function changeAutomation(
       )
         throw new Error("Choose a future schedule before publishing.");
       for (const action of data.actions.filter((a) => a.type === "template")) {
-        const template = (
-          await tx.get(
-            adminDb.collection("templates").doc(documentId(action.templateId!)),
-          )
-        ).data();
+        const template = await repository.get("templates", businessId, documentId(action.templateId!));
         if (
           !template ||
           template.businessId !== businessId ||
-          template.status !== "approved"
+          template.status !== "approved" ||
+          (typeof template.vertical === "string" && !enabledProducts.includes(template.vertical as ActiveAutomationVertical))
         )
-          throw new Error("Choose an approved template from this business.");
+          throw new ProductAccessError();
       }
     }
-    if (operation === "delete") tx.delete(ref);
-    else if (operation === "duplicate")
-      tx.create(copy, {
+    const now = new Date().toISOString();
+    if (operation === "delete") await repository.delete("automations", businessId, automationId);
+    else if (operation === "duplicate") {
+      const copyId = randomUUID();
+      await repository.create("automations", {
         ...data,
+        id: copyId,
         name: `${data.name.slice(0, 110)} (copy)`,
         businessId,
+        product,
         status: "draft",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        createdAt: now,
+        updatedAt: now,
         publishedAt: null,
       });
-    else
-      tx.update(ref, {
+      return copyId;
+    } else
+      await repository.update("automations", businessId, automationId, {
         status: operation === "pause" ? "paused" : "active",
-        updatedAt: serverTimestamp(),
-        ...(operation !== "pause" ? { publishedAt: serverTimestamp() } : {}),
+        updatedAt: now,
+        ...(operation !== "pause" ? { publishedAt: now } : {}),
       });
-    return operation === "duplicate" ? copy.id : id;
-  });
+    return automationId;
 }
 
 export async function createAutomationFromTemplate(
   businessId: string,
   templateId: string,
 ) {
-  const business = await requireAutomationBusiness(businessId);
-  const draft = cloneProductTemplate(business.vertical, templateId);
-  // Legacy published template IDs remain importable; dashboard authoring is restricted by the registry.
-  const id = await saveAutomation(businessId, undefined, draft, false);
+  await requireAutomationBusiness(businessId);
+  const enabledProducts = await getEnabledProducts(businessId);
+  const selected = templateForRegisteredProduct(templateId);
+  if (!selected || !enabledProducts.includes(selected.vertical)) throw new ProductAccessError();
+  const { id: ignoredId, vertical: ignoredVertical, category: ignoredCategory, recommended: ignoredRecommended, active: ignoredActive, ...draft } = selected;
+  void ignoredId; void ignoredVertical; void ignoredCategory; void ignoredRecommended; void ignoredActive;
+  const id = await saveAutomation(businessId, undefined, draft, false, selected.vertical);
   return { id, draft };
 }

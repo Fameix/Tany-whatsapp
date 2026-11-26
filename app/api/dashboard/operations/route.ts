@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveDashboardSession } from "@/lib/admin/dashboard-access";
+import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { OperationsAccessError } from "@/lib/admin/client-access";
 import { mutateClientOperations, readClientOperations, sendOperatorMessage } from "@/lib/admin/client-operations";
 import { EntitlementError } from "@/lib/subscriptions/entitlements";
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 async function handle(request: NextRequest, mutate: boolean) {
-  const session = await resolveDashboardSession(process.env.MESSAGING_SERVICE_SECRET ?? "", request.cookies.get("__Host-tany-dashboard")?.value ?? "");
-  // Standalone local development uses the existing explicit local dashboard mode.
-  const principal = session ?? (process.env.NODE_ENV === "development" ? { role: "admin" as const } : null);
+  const session = await resolveDashboardSession(process.env.MESSAGING_SERVICE_SECRET ?? "", request.cookies.get(dashboardSessionCookieName)?.value ?? "");
+  const principal = session;
   if (!principal) return NextResponse.json({ code: "UNAUTHORIZED", message: "Open WhatsApp from your Tany account." }, { status: 401, headers });
   try {
     const requested = request.nextUrl.searchParams.get("businessId") ?? undefined;

@@ -41,10 +41,10 @@ async function main() {
   await admin.updateBusiness(a.id, {
     ...base,
     name: "Renamed Business",
-    vertical: "salon",
+    vertical: "motos",
     settings: { staff: { person: "Anna" }, customFlag: true },
   });
-  assert.equal((await admin.getAdminBusiness(a.id)).vertical, "salon");
+  assert.equal((await admin.getAdminBusiness(a.id)).vertical, "motos");
   assert.equal((await admin.getAdminBusiness(a.id)).settings.customFlag, true);
   assert.equal(h.read("businesses/" + a.id).createdAt.toMillis(), createdAt);
   await admin.toggleBusiness(a.id, false);

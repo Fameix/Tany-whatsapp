@@ -74,6 +74,7 @@ import {
 } from "@/lib/admin/operations-types";
 import { updateOperations } from "../operations-actions";
 import { previewWhatsAppTest } from "@/app/business/[businessId]/whatsapp/actions";
+import { WhatsAppAccountActions } from "@/app/dashboard/messaging/_components/whatsapp-account-actions";
 
 function date(value: string | null) {
   return value
@@ -932,7 +933,7 @@ export function OperationsPanel({
           )}
         </>
       )}
-      {!client && section === "setup-requests" && <Panel title="Setup Requests"><GridTable headers={["Business", "Display name", "Phone", "Status", "Requested", "Action"]} rows={(data.setupRequests ?? []).map(request => [request.business, request.displayName, request.phone, request.status, date(request.at), <Link key="manage" className="underline" href={`/business/${encodeURIComponent(request.businessId)}/whatsapp/setup`}>Review setup</Link>])} /></Panel>}
+      {!client && section === "setup-requests" && <Panel title="Setup Requests"><GridTable headers={["Business", "Display name", "Phone", "Status", "Requested", "Action"]} rows={(data.setupRequests ?? []).map(request => [request.business, request.displayName, request.phone, request.status, date(request.at), <Link key="manage" className="underline" href={`/business/${encodeURIComponent(request.businessId)}/whatsapp`}>Review setup</Link>])} /></Panel>}
       {(section === "settings" || section === "automations") && (
         <>
           {!data.businessId ? (
@@ -1222,6 +1223,7 @@ function Account({ account: a, onUpdated }: { account: OperationAccount; onUpdat
       {a.internalTestingActive && <p className="text-xs text-muted-foreground">Active for internal testing · Meta connectivity unverified</p>}
       <p className="text-xs text-muted-foreground">WABA ID: {a.wabaId ?? "Not recorded"}</p>
       <div className="flex flex-wrap gap-2">
+        {a.status === "Not connected" && <WhatsAppAccountActions status={a.status} hasConfiguredPhone={false} businessId={a.businessId} />}
         <AccountMetadataEditor account={a} onUpdated={onUpdated} />
         <Sheet>
           <SheetTrigger asChild>

@@ -6,11 +6,11 @@ async function main() {
   const { updateAccountMetadata: save } = h.load('lib/admin/account-metadata.ts');
   const { getOperationsData } = h.load('lib/admin/operations-service.ts');
   for (const id of ['a', 'b']) h.seed(`businesses/${id}`, { name: id, vertical: 'eats', active: true, whatsappPhoneNumberId: id === 'a' ? '111' : '222', settings: {} });
-  const initial = { businessId: 'a', vertical: 'eats', displayName: 'Demo Restaurant', displayPhone: '+919876543210', phoneNumberId: '111', wabaId: '333', status: 'connected', revision: 4, testPassed: true, validationMode: 'live', testedAt: h.Timestamp.fromMillis(Date.now()), tokenSecretName: 'private-secret-reference', accessToken: 'private-token', catalogEnabled: true };
+  const initial = { businessId: 'a', vertical: 'eats', displayName: 'Demo Restaurant', displayPhone: '+919876543210', phoneNumberId: '111', wabaId: '333', status: 'connected', revision: 4, testPassed: true, validationMode: 'live', testedAt: h.Timestamp.fromMillis(Date.now()), tokenSecretName: 'TANY_WA_A_META_TOKEN', accessToken: 'private-token', catalogEnabled: true };
   h.seed('whatsapp_accounts/restaurant', initial);
   h.seed('whatsapp_phone_mappings/111', { businessId: 'a', accountId: 'restaurant' });
   h.seed('customers/existing', { businessId: 'a', name: 'History' });
-  const input = { displayName: 'Real Restaurant', displayPhone: '+91 98765 43210', phoneNumberId: '444', wabaId: '555', status: 'connected' };
+  const input = { displayName: 'Real Restaurant', displayPhone: '+91 98765 43210', phoneNumberId: '444', wabaId: '555', tokenSecretName: 'TANY_WA_A_META_TOKEN', status: 'connected' };
   for (const invalid of [{ phoneNumberId: '' }, { wabaId: '' }, { phoneNumberId: 'abc' }, { status: 'testing' }, { accessToken: 'changed' }]) {
     await assert.rejects(save('a', 'restaurant', { ...input, ...invalid }));
     assert.equal(h.read('whatsapp_accounts/restaurant').phoneNumberId, '111');
@@ -51,15 +51,16 @@ async function main() {
   await assert.rejects(save('demo-restaurant', 'demo-restaurant', { ...input, wabaId: '' }));
   await assert.rejects(save('demo-restaurant', 'demo-restaurant', { ...input, phoneNumberId: '222' }));
   assert.equal(h.read('whatsapp_accounts/demo-restaurant'), undefined);
-  await save('demo-restaurant', 'demo-restaurant', { ...input, phoneNumberId: '888', wabaId: '999' });
+  const demoInput = { ...input, tokenSecretName: 'TANY_WA_DEMO_RESTAURANT_META_TOKEN' };
+  await save('demo-restaurant', 'demo-restaurant', { ...demoInput, phoneNumberId: '888', wabaId: '999' });
   const migrated = h.read('whatsapp_accounts/demo-restaurant');
   assert.equal(migrated.businessId, 'demo-restaurant'); assert.equal(migrated.vertical, 'eats');
   assert.equal(migrated.status, 'pending'); assert.equal(migrated.testPassed, false);
-  assert.equal(migrated.tokenSecretName, undefined); assert.equal(migrated.accessToken, undefined);
+  assert.equal(migrated.tokenSecretName, 'TANY_WA_DEMO_RESTAURANT_META_TOKEN'); assert.equal(migrated.accessToken, undefined);
   const refreshed = (await getOperationsData('demo-restaurant')).accounts[0];
   assert.equal(refreshed.accountId, legacy.accountId); assert.equal(refreshed.wabaId, '999');
   assert.equal(refreshed.phone, '+919876543210'); assert.equal(refreshed.status, 'Configured · unverified');
-  await save('demo-restaurant', 'demo-restaurant', { ...input, phoneNumberId: '888', status: 'disconnected' });
+  await save('demo-restaurant', 'demo-restaurant', { ...demoInput, phoneNumberId: '888', status: 'disconnected' });
   assert.equal(h.read('whatsapp_accounts/demo-restaurant').status, 'disconnected');
   h.seed('businesses/unconfigured', { name: 'Empty', vertical: 'eats', active: true, settings: {} });
   await assert.rejects(save('unconfigured', 'unconfigured', input));
@@ -68,7 +69,7 @@ async function main() {
   await assert.rejects(save('a', 'demo-restaurant', input, true));
   await assert.rejects(save('demo-restaurant', 'demo-restaurant', { ...input, phoneNumberId: '222' }, true));
   await assert.rejects(save('demo-restaurant', 'demo-restaurant', { ...input, wabaId: '' }, true));
-  const activated = await save('demo-restaurant', 'demo-restaurant', { ...input, phoneNumberId: '888', wabaId: '999' }, true);
+  const activated = await save('demo-restaurant', 'demo-restaurant', { ...demoInput, phoneNumberId: '888', wabaId: '999' }, true);
   assert.equal(activated.status, 'connected');
   assert.equal(h.read('whatsapp_accounts/demo-restaurant').testPassed, false, 'internal activation must not fabricate live proof');
   assert.equal(h.read('whatsapp_accounts/demo-restaurant').internalTestingActive, true);

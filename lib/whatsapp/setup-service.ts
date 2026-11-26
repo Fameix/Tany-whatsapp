@@ -1,12 +1,11 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase-admin";
+import { databaseMode, runtimeRepositoryFor } from "@/lib/data/repository";
 import { Timestamp } from "firebase-admin/firestore";
 import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
-import {
-  EntitlementError,
-  requireWhatsAppEntitlement,
-} from "@/lib/subscriptions/entitlements";
-import { accountAccessToken } from "@/lib/whatsapp/credentials";
+import { isActiveTanyVertical } from "@/lib/messaging/vertical-config";
+import { accountAccessToken, isAllowedTokenSecretName } from "@/lib/whatsapp/credentials";
+import { postgresShadowWrite } from "@/lib/data/repository";
 import type { WhatsAppSetup } from "@/lib/whatsapp/setup-types";
 
 export class SetupError extends Error {
@@ -60,11 +59,9 @@ function project(
   };
 }
 async function checkedBusiness(businessId: string) {
-  await requireWhatsAppEntitlement(businessId);
-  const business = (
-    await adminDb.collection("businesses").doc(documentId(businessId)).get()
-  ).data();
-  if (!business || business.active !== true)
+  documentId(businessId);
+  const business = await (await runtimeRepositoryFor()).getBusiness(businessId);
+  if (!business || business.active !== true || !isActiveTanyVertical(business.vertical))
     throw new SetupError(
       "BUSINESS_UNAVAILABLE",
       "This business is unavailable.",
@@ -76,12 +73,11 @@ export async function getWhatsAppSetup(
   businessId: string,
 ): Promise<WhatsAppSetup | null> {
   await checkedBusiness(businessId);
-  const doc = await refFor(businessId).get();
-  const data = doc.data();
+  const data = await (await runtimeRepositoryFor()).getWhatsAppAccount(businessId);
   if (!data) return null;
   if (data.businessId !== businessId)
     throw new SetupError("TENANT_MISMATCH", "Account unavailable.", 403);
-  return project(doc.id, data);
+  return project(data.id, data);
 }
 export async function assertWhatsAppPhoneMapping(
   tx: FirebaseFirestore.Transaction,
@@ -140,8 +136,21 @@ export async function saveWhatsAppSetup(businessId: string, input: unknown) {
       "INVALID_INPUT",
       "Check the account IDs and secret reference. Do not paste an access token.",
     );
+  if (setupType === "existing" && !isAllowedTokenSecretName(tokenSecretName, businessId))
+    throw new SetupError("SECRET_REFERENCE_UNAVAILABLE", "This token secret name is not available for this business.", 400);
   const businessName =
     setupType === "new" ? text(value, "businessName") : business.name;
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
+    try {
+      const { PostgresMessagingRepository } = await import("@/lib/data/postgres-messaging-repository");
+      await new PostgresMessagingRepository().saveWhatsAppSetup({ businessId, vertical: business.vertical, setupType, displayName, displayPhone: `+${displayPhone}`, businessName, phoneNumberId, wabaId, tokenSecretName });
+      return getWhatsAppSetup(businessId);
+    } catch (error) {
+      if (error instanceof Error && error.message === "POSTGRES_PHONE_ALREADY_CONNECTED") throw new SetupError("PHONE_ALREADY_CONNECTED", "This WhatsApp account is already assigned to another business.", 409);
+      if (error instanceof Error && error.message === "WHATSAPP_ACCOUNT_BUSY") throw new SetupError("ACCOUNT_BUSY", "Disconnect the account or finish its test before changing details.", 409);
+      throw error;
+    }
+  }
   await adminDb.runTransaction(async (tx) => {
     const ref = refFor(businessId);
     const old = (await tx.get(ref)).data();
@@ -196,11 +205,13 @@ export async function saveWhatsAppSetup(businessId: string, input: unknown) {
       updatedAt: serverTimestamp(),
     });
   });
-  return getWhatsAppSetup(businessId);
+  const setup = await getWhatsAppSetup(businessId);
+  if (setup) await postgresShadowWrite("account", { ...setup, id: setup.accountId, businessId });
+  return setup;
 }
 
 async function validateWithProvider(
-  data: FirebaseFirestore.DocumentData,
+  data: Record<string, unknown>,
   input: Record<string, unknown>,
 ) {
   if (input.mode === "manual_test") {
@@ -220,14 +231,19 @@ async function validateWithProvider(
         "Manual/test validation passed. No Meta connection was verified and no message was sent.",
     } as const;
   }
-  const token = accountAccessToken(data.tokenSecretName, data.businessId);
+  const businessId = typeof data.businessId === "string" ? data.businessId : "";
+  const tokenSecretName = typeof data.tokenSecretName === "string" ? data.tokenSecretName : "";
+  const wabaId = typeof data.wabaId === "string" ? data.wabaId : "";
+  const phoneNumberId = typeof data.phoneNumberId === "string" ? data.phoneNumberId : "";
+  const displayPhone = typeof data.displayPhone === "string" ? data.displayPhone : "";
+  const token = await accountAccessToken(tokenSecretName, businessId);
   if (process.env.WHATSAPP_SETUP_LIVE_TESTS !== "true" || !token)
     throw new SetupError(
       "LIVE_UNAVAILABLE",
       "Live validation is not configured. Ask Tany to enable connection testing.",
     );
   const response = await fetch(
-    `https://graph.facebook.com/v26.0/${data.wabaId}/phone_numbers?fields=id,display_phone_number&limit=100`,
+    `https://graph.facebook.com/${process.env.META_GRAPH_VERSION || "v27.0"}/${wabaId}/phone_numbers?fields=id,display_phone_number&limit=100`,
     {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
@@ -239,20 +255,19 @@ async function validateWithProvider(
     Array.isArray(result.data) &&
     result.data.find(
       (item: { id?: string; display_phone_number?: string }) =>
-        item.id === data.phoneNumberId,
+        item.id === phoneNumberId,
     );
   if (
     !response.ok ||
     !mapped ||
     typeof mapped.display_phone_number !== "string" ||
-    cleanPhone(mapped.display_phone_number) !== cleanPhone(data.displayPhone)
+    cleanPhone(mapped.display_phone_number) !== cleanPhone(displayPhone)
   )
     throw new SetupError(
       "VALIDATION_FAILED",
       "The WhatsApp account details could not be verified. Check the account mapping and try again.",
     );
   if (input.sendTest === true) {
-    await requireWhatsAppEntitlement(data.businessId);
     const recipient =
       typeof input.recipient === "string" ? cleanPhone(input.recipient) : "";
     const allowed = (process.env.WHATSAPP_SETUP_TEST_RECIPIENTS ?? "")
@@ -264,7 +279,7 @@ async function validateWithProvider(
         "This recipient is not enabled for test messages.",
       );
     const sent = await fetch(
-      `https://graph.facebook.com/v26.0/${data.phoneNumberId}/messages`,
+      `https://graph.facebook.com/${process.env.META_GRAPH_VERSION || "v27.0"}/${data.phoneNumberId}/messages`,
       {
         method: "POST",
         headers: {
@@ -299,6 +314,29 @@ async function validateWithProvider(
 export async function testWhatsAppSetup(businessId: string, input: unknown) {
   await checkedBusiness(businessId);
   const options = inputObject(input);
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
+    const { PostgresMessagingRepository } = await import("@/lib/data/postgres-messaging-repository");
+    const repository = new PostgresMessagingRepository();
+    let claimed: Record<string, unknown>;
+    try { claimed = await repository.claimWhatsAppSetupTest(businessId) as unknown as Record<string, unknown>; }
+    catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message === "WHATSAPP_ACCOUNT_NOT_FOUND") throw new SetupError("NOT_FOUND", "Save your WhatsApp details first.", 404);
+      if (message === "WHATSAPP_SETUP_ASSISTANCE_REQUIRED") throw new SetupError("ASSISTANCE_REQUIRED", "Tany will help complete your WhatsApp Business setup.");
+      if (message === "WHATSAPP_ACCOUNT_BUSY") throw new SetupError("ACCOUNT_BUSY", "This account is already connected or being tested.", 409);
+      throw error;
+    }
+    const revision = Number(claimed.revision);
+    try {
+      const result = await validateWithProvider(claimed, options);
+      await repository.finishWhatsAppSetupTest(businessId, revision, true, result.message, result.mode);
+    } catch (error) {
+      await repository.finishWhatsAppSetupTest(businessId, revision, false, error instanceof SetupError ? error.message : "Connection check failed. Please try again.", null);
+      if (error instanceof SetupError) throw error;
+      throw new SetupError("VALIDATION_FAILED", "Connection check failed. Please try again.");
+    }
+    return getWhatsAppSetup(businessId);
+  }
   const ref = refFor(businessId);
   const claimed = await adminDb.runTransaction(async (tx) => {
     const data = (await tx.get(ref)).data();
@@ -330,7 +368,6 @@ export async function testWhatsAppSetup(businessId: string, input: unknown) {
   });
   try {
     const result = await validateWithProvider(claimed, options);
-    await requireWhatsAppEntitlement(businessId);
     await adminDb.runTransaction(async (tx) => {
       const latest = (await tx.get(ref)).data();
       if (latest?.revision !== claimed.revision || latest?.status !== "testing")
@@ -364,7 +401,6 @@ export async function testWhatsAppSetup(businessId: string, input: unknown) {
           updatedAt: serverTimestamp(),
         });
     });
-    if (error instanceof EntitlementError) throw error;
     if (!(error instanceof SetupError))
       throw new SetupError(
         "VALIDATION_FAILED",
@@ -374,8 +410,21 @@ export async function testWhatsAppSetup(businessId: string, input: unknown) {
   }
   return getWhatsAppSetup(businessId);
 }
-export async function activateWhatsAppSetup(businessId: string) {
+export async function activateWhatsAppSetup(businessId: string, credentialAvailable?: (secretReference: string) => Promise<boolean>) {
   await checkedBusiness(businessId);
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
+    const account = await (await runtimeRepositoryFor()).getWhatsAppAccount(businessId);
+    if (!account) throw new SetupError("NOT_FOUND", "Account unavailable.", 404);
+    const testedAt = account.testedAt;
+    if (account.setupType !== "existing" || account.status !== "pending" || account.testPassed !== true || !["live", "manual_test"].includes(String(account.validationMode)) || !(testedAt instanceof Date) || testedAt.getTime() < Date.now() - 15 * 60000)
+      throw new SetupError("TEST_REQUIRED", "Run a successful connection test before activating.");
+    if (account.validationMode === "manual_test" && process.env.WHATSAPP_SETUP_ALLOW_MANUAL_TEST !== "true") throw new SetupError("TEST_REQUIRED", "Run a live connection test before activating.");
+    if (account.validationMode === "live" && !(await (credentialAvailable ? credentialAvailable(account.tokenSecretName ?? "") : accountAccessToken(account.tokenSecretName ?? "", businessId)))) throw new SetupError("LIVE_UNAVAILABLE", "The account credential is unavailable.");
+    const { PostgresMessagingRepository } = await import("@/lib/data/postgres-messaging-repository");
+    try { await new PostgresMessagingRepository().activateWhatsAppSetup(businessId); }
+    catch (error) { if (error instanceof Error && error.message === "WHATSAPP_SETUP_TEST_REQUIRED") throw new SetupError("TEST_REQUIRED", "Run a successful connection test before activating."); throw error; }
+    return getWhatsAppSetup(businessId);
+  }
   await adminDb.runTransaction(async (tx) => {
     const ref = refFor(businessId);
     const data = (await tx.get(ref)).data();
@@ -404,7 +453,7 @@ export async function activateWhatsAppSetup(businessId: string) {
       );
     if (
       data.validationMode === "live" &&
-      !accountAccessToken(data.tokenSecretName, data.businessId)
+      !(await accountAccessToken(data.tokenSecretName, data.businessId))
     )
       throw new SetupError(
         "LIVE_UNAVAILABLE",
@@ -425,6 +474,16 @@ export async function activateWhatsAppSetup(businessId: string) {
 }
 export async function disconnectWhatsAppSetup(businessId: string) {
   await checkedBusiness(businessId);
+  if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
+    const { PostgresMessagingRepository } = await import("@/lib/data/postgres-messaging-repository");
+    try { await new PostgresMessagingRepository().disconnectWhatsAppSetup(businessId); }
+    catch (error) {
+      if (error instanceof Error && error.message === "WHATSAPP_ACCOUNT_NOT_FOUND") throw new SetupError("NOT_FOUND", "Account unavailable.", 404);
+      if (error instanceof Error && error.message === "POSTGRES_PHONE_MAPPING_TENANT_MISMATCH") throw new SetupError("TENANT_MISMATCH", "Account unavailable.", 403);
+      throw error;
+    }
+    return getWhatsAppSetup(businessId);
+  }
   await adminDb.runTransaction(async (tx) => {
     const ref = refFor(businessId);
     const data = (await tx.get(ref)).data();

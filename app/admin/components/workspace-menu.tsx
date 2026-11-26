@@ -18,7 +18,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSidebar } from "@/components/ui/sidebar";
-import { verticalConfig } from "@/lib/messaging/vertical-config";
+import {
+  activeTanyVerticals,
+  isActiveTanyVertical,
+  verticalConfig,
+} from "@/lib/messaging/vertical-config";
 import type { AdminBusiness, WorkspaceOption } from "@/lib/admin/types";
 
 function WorkspaceLabel({
@@ -33,7 +37,7 @@ function WorkspaceLabel({
       <BrandLogo vertical={business?.vertical} decorative />
       <span className="min-w-0 flex-1 text-left">
         <span className="block truncate text-xs font-medium">
-          {business?.name ?? "Tany Messaging"}
+          {business?.name ?? "Tany Products"}
         </span>
         {loading ? (
           <span className="mt-1 flex items-center gap-1.5 text-[10px] font-normal text-muted-foreground">
@@ -88,27 +92,32 @@ export function WorkspaceMenu({
   const { setOpenMobile } = useSidebar();
   const router = useRouter();
   // An inactive current workspace stays visible, but is never a switch destination.
-  const currentInactive = business && !business.active ? business : null;
+  const currentInactive = business && (!business.active || !isActiveTanyVertical(business.vertical)) ? business : null;
   const query = search.trim().toLowerCase();
   const products = Object.values(verticalConfig)
     .map(({ key, label }) => {
+      const active = isActiveTanyVertical(key);
       const matchesProduct = `${key} ${label}`.toLowerCase().includes(query);
-      const workspaces = options.filter(
+      const workspaces = active ? options.filter(
         (option) =>
           option.active &&
           option.vertical === key &&
           (matchesProduct ||
             `${option.name} ${option.id}`.toLowerCase().includes(query)),
-      );
-      return { key, label, workspaces, matchesProduct };
+      ) : [];
+      return { key, label, active, workspaces, matchesProduct };
     })
     .filter(
       (product) => product.matchesProduct || product.workspaces.length > 0,
     )
-    .sort(
-      (a, b) =>
-        Number(b.workspaces.length > 0) - Number(a.workspaces.length > 0),
-    );
+    // Usable product workspaces are the primary switch targets. Coming-soon
+    // products retain their registry order below them.
+    .sort((left, right) => {
+      if (left.active !== right.active) return Number(right.active) - Number(left.active);
+      if (!left.active) return 0;
+      const activeOrder = activeTanyVerticals as readonly string[];
+      return activeOrder.indexOf(left.key) - activeOrder.indexOf(right.key);
+    });
   const close = () => {
     setOpen(false);
     setOpenMobile(false);
@@ -125,7 +134,7 @@ export function WorkspaceMenu({
         <Button
           variant="ghost"
           className="h-auto w-full justify-start gap-3 px-2 py-2"
-          aria-label={`Switch workspace. Current: ${business?.name ?? "Tany Messaging"}`}
+          aria-label={`Switch workspace. Current: ${business?.name ?? "Tany Products"}`}
         >
           <WorkspaceLabel business={business} />
         </Button>
@@ -150,7 +159,7 @@ export function WorkspaceMenu({
               aria-current={!business ? "true" : undefined}
             >
               <BrandLogo decorative />
-              <span className="flex-1 text-xs font-medium">Tany Messaging</span>
+              <span className="flex-1 text-xs font-medium">All products</span>
               {!business && (
                 <Check className="size-4" aria-label="Current workspace" />
               )}
@@ -221,6 +230,24 @@ export function WorkspaceMenu({
                   </Link>
                 </DropdownMenuItem>
               ))
+            ) : product.active && canSeeAdmin ? (
+              <DropdownMenuItem asChild key={product.key}>
+                <Link
+                  href={`/admin/products/${encodeURIComponent(product.key)}`}
+                  onClick={close}
+                >
+                  <BrandLogo vertical={product.key} decorative />
+                  <span className="min-w-0 flex-1 text-xs font-medium">
+                    {product.label}
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    className="shrink-0 text-[10px] font-normal"
+                  >
+                    Active
+                  </Badge>
+                </Link>
+              </DropdownMenuItem>
             ) : (
               <DropdownMenuItem
                 key={product.key}
@@ -235,7 +262,7 @@ export function WorkspaceMenu({
                   variant="outline"
                   className="shrink-0 text-[10px] font-normal"
                 >
-                  {failed ? "Unavailable" : "Coming Soon"}
+                  {!product.active ? "Coming Soon" : failed ? "Unavailable" : "Active"}
                 </Badge>
               </DropdownMenuItem>
             ),

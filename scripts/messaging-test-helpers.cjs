@@ -157,6 +157,11 @@ function createHarness({ seedFixtures = true, linkedIdentity = true, entitledBus
         return { messages: [{ id: `wamid.out-${sends.length}` }] };
       } };
       if (specifier.startsWith('@/')) return load(specifier.slice(2) + '.ts');
+      if (specifier.startsWith('.')) {
+        const resolved = path.resolve(path.dirname(filename), specifier);
+        const withExtension = path.extname(resolved) ? resolved : `${resolved}.ts`;
+        return load(path.relative(root, withExtension));
+      }
       return require(specifier);
     }
     vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename })(localRequire, loadedModule, loadedModule.exports);

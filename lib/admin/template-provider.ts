@@ -1,11 +1,11 @@
 import "server-only";
-import { adminDb } from "@/lib/firebase-admin";
+import { automationPersistence, postgresAutomationAuthoritative } from "@/lib/automations/persistence";
 import { documentId } from "@/lib/messaging/services/shared";
 import type { OperationRecord } from "./operations-types";
 
 /** A future Meta adapter must return this same safe, tenant-scoped contract. */
 export interface WhatsAppTemplateProvider {
-  readonly source: "firestore" | "meta";
+  readonly source: "firestore" | "postgres" | "meta";
   list(scope: {
     businessId: string;
     businessName: string;
@@ -14,33 +14,29 @@ export interface WhatsAppTemplateProvider {
 const text = (value: unknown, max: number) =>
   typeof value === "string" ? value.slice(0, max) : "";
 export const firestoreTemplateProvider: WhatsAppTemplateProvider = {
-  source: "firestore",
+  get source() { return postgresAutomationAuthoritative() ? "postgres" as const : "firestore" as const; },
   async list({ businessId, businessName }) {
     documentId(businessId);
-    const snapshot = await adminDb
-      .collection("templates")
-      .where("businessId", "==", businessId)
-      .get();
-    return snapshot.docs
-      .filter((doc) => doc.data().businessId === businessId)
-      .map((doc) => {
-        const data = doc.data();
-        const updatedAt = data.updatedAt?.toDate?.();
+    const templates = await automationPersistence().list("templates", businessId);
+    return templates
+      .filter((data) => data.businessId === businessId)
+      .map((data) => {
+        const updatedAt = data.updatedAt instanceof Date ? data.updatedAt : typeof data.updatedAt === "string" ? new Date(data.updatedAt) : (data.updatedAt as { toDate?(): Date } | undefined)?.toDate?.();
         return {
-          id: doc.id,
+          id: data.id,
           businessId,
           business: businessName,
           name: text(data.name, 120),
           status: ["approved", "pending", "rejected", "draft"].includes(
-            data.status,
+            String(data.status),
           )
-            ? data.status
+            ? String(data.status)
             : "draft",
           language: text(data.language, 20),
           category: ["marketing", "utility", "authentication"].includes(
-            data.category,
+            String(data.category),
           )
-            ? data.category
+            ? String(data.category)
             : "unknown",
           at:
             updatedAt instanceof Date && Number.isFinite(updatedAt.getTime())

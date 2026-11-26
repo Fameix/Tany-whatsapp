@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         trace,
       );
       if (receiptBusiness)
-        await recordDeliveryReceipts(receiptBusiness.id, value.statuses);
+        await recordDeliveryReceipts(receiptBusiness.id, value.statuses, request);
     }
 
     if (!message) {
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
             console.error("[WA_SEND_FAILED]", {
               error: safeWhatsAppError(error),
             }),
-        }),
+        }, request),
       trace,
     );
     if (result == null || (!("reply" in result) && !("skipped" in result)))

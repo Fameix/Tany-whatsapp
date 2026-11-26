@@ -243,7 +243,7 @@ async function main() {
     "app/admin/components/workspace-switcher.tsx",
     "utf8",
   );
-  assert.ok(switcher.includes(".filter((profile) => profile.active)"));
+  assert.ok(switcher.includes(".filter((profile) => profile.active && isActiveTanyVertical(profile.vertical))"));
   assert.ok(!switcher.includes("test(profile.whatsappPhoneNumberId)"));
   const flow = createHarness();
   const incoming = flow.load(

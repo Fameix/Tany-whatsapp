@@ -12,7 +12,7 @@ import { handleCabsMessage } from "@/lib/messaging/flows/cabs";
 import { handleEatsMessage } from "@/lib/messaging/flows/eats";
 import { handleSalonMessage } from "@/lib/messaging/flows/salon";
 import { handleMotosMessage } from "@/lib/messaging/flows/motos";
-import { isTanyVertical } from "@/lib/messaging/vertical-config";
+import { isActiveTanyVertical } from "@/lib/messaging/vertical-config";
 import { runClickFirst } from "@/lib/messaging/click-first";
 import { saveCustomerMenu } from "@/lib/messaging/services/saved-customer-service";
 import { catalogMenuReply } from "@/lib/whatsapp/catalog";
@@ -30,8 +30,8 @@ export async function routeMessage(
   input: string | IncomingMessageInput,
   context?: FlowContext,
 ): Promise<FlowResult> {
-  if (!isTanyVertical(business.vertical)) {
-    throw new Error(`Unsupported Tany vertical for business ${business.id}`);
+  if (!isActiveTanyVertical(business.vertical)) {
+    throw new Error(`Tany vertical is not active for business ${business.id}`);
   }
   const incoming =
     typeof input === "string" ? { type: "text" as const, text: input } : input;

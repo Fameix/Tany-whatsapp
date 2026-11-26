@@ -16,7 +16,7 @@ export function AccountMetadataEditor({ account, onUpdated }: { account: Operati
     <DialogTrigger asChild><Button size="sm" variant="outline" disabled={!account.accountId} title={!account.accountId ? "No WhatsApp account is configured yet." : undefined}>Edit</Button></DialogTrigger>
     <DialogContent className="max-h-[90vh] overflow-y-auto">
       <DialogHeader><DialogTitle>Edit WhatsApp account</DialogTitle><DialogDescription>{account.business}. Saving metadata does not verify a live connection.</DialogDescription></DialogHeader>
-      <form key={`${account.accountId}-${account.phoneNumberId}-${account.wabaId}-${account.phone}-${account.displayName}-${account.metadataStatus}`} className="space-y-4" onSubmit={event => {
+      <form key={`${account.accountId}-${account.phoneNumberId}-${account.wabaId}-${account.tokenSecretName}-${account.phone}-${account.displayName}-${account.metadataStatus}`} className="space-y-4" onSubmit={event => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         const activate = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value === "activate";
@@ -34,6 +34,7 @@ export function AccountMetadataEditor({ account, onUpdated }: { account: Operati
           ["displayPhone", "Phone number with country code", account.phone ?? "", 30],
           ["phoneNumberId", "Phone Number ID", account.phoneNumberId ?? "", 40],
           ["wabaId", "WABA ID", account.wabaId ?? "", 40],
+          ["tokenSecretName", "Token Secret Name (Secret Reference)", account.tokenSecretName ?? "", 101],
         ] as const).map(([name, label, value, maxLength]) => <div key={name} className="space-y-1">
           <Label htmlFor={`${prefix}-${name}`}>{label}</Label>
           <Input id={`${prefix}-${name}`} name={name} defaultValue={value} required maxLength={maxLength} disabled={pending} inputMode={name.endsWith("Id") ? "numeric" : name === "displayPhone" ? "tel" : "text"} aria-invalid={!!errors[name]} aria-describedby={errors[name] ? `${prefix}-${name}-error` : undefined} />

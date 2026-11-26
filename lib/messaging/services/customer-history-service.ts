@@ -1,6 +1,8 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase-admin";
 import { customerDocumentId } from "@/lib/messaging/services/shared";
+import { databaseMode } from "@/lib/data/repository";
+import { listRuntimeRecords } from "@/lib/messaging/services/postgres-runtime-records";
 
 export type RecentRequest = {
   kind: "order" | "booking";
@@ -19,19 +21,13 @@ export async function listRecentCustomerRequests(
     : ["orders", "bookings"];
   const history = await Promise.all(
     collections.map(async (collection) => {
-      const snapshot = await adminDb
-        .collection(collection)
-        .where("businessId", "==", businessId)
-        .where("customerPhone", "==", phone)
-        .get();
-      return snapshot.docs
-        .filter(
-          (doc) =>
-            doc.data().businessId === businessId &&
-            doc.data().customerPhone === phone,
-        )
-        .map((doc) => {
-          const row = doc.data();
+      const postgresMode = databaseMode() === "postgres" || databaseMode() === "dual-write";
+      const entries: Array<Record<string, unknown> & { id: string; businessId: string }> = postgresMode
+        ? await listRuntimeRecords<Record<string, unknown> & { id: string; businessId: string }>(collection, businessId)
+        : (await adminDb.collection(collection).where("businessId", "==", businessId).where("customerPhone", "==", phone).get()).docs.map(doc => ({ ...doc.data(), id: doc.id, businessId } as Record<string, unknown> & { id: string; businessId: string }));
+      return entries
+        .filter(row => row.businessId === businessId && row.customerPhone === phone)
+        .map((row) => {
           const title =
             collection === "bookings"
               ? row.serviceName
@@ -52,10 +48,7 @@ export async function listRecentCustomerRequests(
               /^[a-z_]{1,30}$/.test(row.status)
                 ? row.status
                 : "unknown",
-            at:
-              row.updatedAt?.toDate?.()?.getTime?.() ??
-              row.createdAt?.toDate?.()?.getTime?.() ??
-              0,
+            at: typeof row.updatedAt === "string" ? Date.parse(row.updatedAt) || 0 : row.updatedAt instanceof Date ? row.updatedAt.getTime() : (row.updatedAt as { toDate?: () => Date } | undefined)?.toDate?.()?.getTime?.() ?? (typeof row.createdAt === "string" ? Date.parse(row.createdAt) || 0 : 0),
           };
         });
     }),

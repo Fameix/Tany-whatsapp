@@ -4,6 +4,8 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getAdminBusiness } from "@/lib/admin/services";
 import { documentId } from "@/lib/messaging/services/shared";
 import { AdminValidationError } from "@/lib/admin/validation";
+import { databaseMode, runtimeRepositoryFor } from "@/lib/data/repository";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
 
 export type WhatsAppActivity = {
   id: string;
@@ -70,14 +72,15 @@ export async function readWhatsAppOverviewForAdmin(businessId: string): Promise<
   const business = await getAdminBusiness(businessId);
   if (!business)
     throw new AdminValidationError({ businessId: "Business not found." });
-  const [profile, messages, accountDoc] = await Promise.all([
-    adminDb.collection("businesses").doc(businessId).get(),
-    adminDb.collection("messages").where("businessId", "==", businessId).get(),
-    adminDb.collection("whatsapp_accounts").doc(businessId).get(),
+  const postgresMode = databaseMode() === "postgres" || databaseMode() === "dual-write";
+  const [profile, messages, accountRecord] = await Promise.all([
+    postgresMode ? Promise.resolve(business) : adminDb.collection("businesses").doc(businessId).get(),
+    postgresMode ? new PostgresMessagingRepository().listRuntimeMessages(businessId).then(rows => rows.map(data => ({ id: String(data.id), data }))) : adminDb.collection("messages").where("businessId", "==", businessId).get().then(snapshot => snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }))),
+    postgresMode ? (await runtimeRepositoryFor()).getWhatsAppAccount(businessId) : adminDb.collection("whatsapp_accounts").doc(businessId).get(),
   ]);
-  const data = profile.data() ?? {};
+  const data = ((postgresMode ? profile : (profile as FirebaseFirestore.DocumentSnapshot).data()) ?? {}) as Record<string, unknown>;
   const settings = object(data.settings);
-  const account = accountDoc.data();
+  const account = (postgresMode ? accountRecord : (accountRecord as FirebaseFirestore.DocumentSnapshot).data()) as Record<string, unknown> | undefined;
   const whatsapp: Record<string, unknown> = {
     ...object(settings.whatsapp),
     ...(account?.businessId === businessId ? {
@@ -87,8 +90,8 @@ export async function readWhatsAppOverviewForAdmin(businessId: string): Promise<
       connectionStatus: account.status === "connected" ? "connected" : "disconnected",
     } : {}),
   };
-  const activity: WhatsAppActivity[] = messages.docs.flatMap((doc) => {
-    const message = doc.data();
+  const activity: WhatsAppActivity[] = messages.flatMap((doc) => {
+    const message = doc.data;
     if (
       message.businessId !== businessId ||
       !["incoming", "outgoing"].includes(message.direction)

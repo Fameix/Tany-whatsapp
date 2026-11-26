@@ -2,6 +2,8 @@ import { debugCall } from "@/lib/messaging/orchestration-debug";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { adminDb } from "@/lib/firebase-admin";
+import { databaseMode } from "@/lib/data/repository";
+import { listRuntimeRecords } from "@/lib/messaging/services/postgres-runtime-records";
 import { getAvailableCatalogItems } from "@/lib/messaging/services/catalog-service";
 import {
   catalogMenuReply,
@@ -130,14 +132,13 @@ export async function handleEatsCommerce(
     return order;
   };
   if (["track", "track order"].includes(command)) {
-    const docs = await adminDb
-      .collection("orders")
-      .where("businessId", "==", business.id)
-      .where("customerPhone", "==", phone)
-      .get();
-    const sorted = docs.docs
-      .map((d) => ({ ...d.data(), id: d.id }) as Order)
+    const postgresMode = databaseMode() === "postgres" || databaseMode() === "dual-write";
+    const orders = postgresMode
+      ? await listRuntimeRecords<Order & Record<string, unknown>>("orders", business.id)
+      : (await adminDb.collection("orders").where("businessId", "==", business.id).where("customerPhone", "==", phone).get()).docs.map((d) => ({ ...d.data(), id: d.id }) as Order);
+    const sorted = orders
       .filter((o) => o.vertical === "eats")
+      .filter((o) => o.customerPhone === phone)
       .sort((a, b) => {
         const time = (v: unknown) =>
           v && typeof v === "object" && "toMillis" in v

@@ -10,6 +10,7 @@ import type {
   ConversationContext,
   LocationData,
 } from "@/lib/messaging/domain-types";
+import { getRuntimeRecord, mutateRuntimeRecord, postgresRuntimeMode } from "@/lib/messaging/services/postgres-runtime-records";
 
 export type SavedAddress = {
   id: string;
@@ -76,7 +77,7 @@ export async function loadSavedCustomer(
   };
   const identity = await resolveWhatsAppIdentity(phone);
   if (!identity) return empty;
-  const data = (
+  const data = postgresRuntimeMode() ? await getRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("customers", businessId, customerDocumentId(businessId, phone)) : (
     await adminDb
       .collection("customers")
       .doc(customerDocumentId(businessId, phone))
@@ -119,11 +120,12 @@ export async function loadSavedCustomer(
     address(saved.home ?? saved.Home, "home", "Home"),
     address(saved.work ?? saved.Work, "work", "Work"),
   ].filter((item): item is SavedAddress => !!item);
+  const locationData = object(data.location);
   const recent = address(
     data.location,
     "recent",
-    typeof data.location?.label === "string"
-      ? data.location.label.slice(0, 20)
+    typeof locationData.label === "string"
+      ? locationData.label.slice(0, 20)
       : "Recent location",
   );
   if (
@@ -190,6 +192,15 @@ export async function saveCustomerMenu(
   const ref = adminDb
     .collection("customers")
     .doc(customerDocumentId(businessId, phone));
+  if (postgresRuntimeMode()) {
+    const current = await getRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("customers", businessId, ref.id);
+    if (!current || current.uid !== identity.uid || current.businessId !== businessId || current.phone !== phone) return;
+    await mutateRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("customers", businessId, ref.id, current => {
+      if (!current || current.uid !== identity.uid || current.businessId !== businessId || current.phone !== phone) throw new Error("Customer unavailable");
+      return { ...current, whatsappMenu: menu, updatedAt: new Date() };
+    });
+    return;
+  }
   await adminDb.runTransaction(async (tx) => {
     const customer = (await tx.get(ref)).data();
     if (
@@ -233,6 +244,15 @@ export async function rememberCustomerChoices(
   const ref = adminDb
     .collection("customers")
     .doc(customerDocumentId(businessId, phone));
+  if (postgresRuntimeMode()) {
+    const current = await getRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("customers", businessId, ref.id);
+    if (!current || current.uid !== identity.uid || current.businessId !== businessId || current.phone !== phone) return;
+    await mutateRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("customers", businessId, ref.id, current => {
+      if (!current || current.uid !== identity.uid || current.businessId !== businessId || current.phone !== phone) throw new Error("Customer unavailable");
+      return { ...current, recentSelections: { ...object(current.recentSelections), ...recent }, updatedAt: new Date() };
+    });
+    return;
+  }
   await adminDb.runTransaction(async (tx) => {
     const customer = (await tx.get(ref)).data();
     if (

@@ -1,6 +1,5 @@
 import "server-only";
 import { getWhatsAppSetup } from "@/lib/whatsapp/setup-service";
-import { requireWhatsAppEntitlement } from "@/lib/subscriptions/entitlements";
 
 export type ClientWhatsAppConnection = {
   status:
@@ -21,7 +20,6 @@ export type ClientWhatsAppConnection = {
 export async function getClientWhatsAppConnection(
   businessId: string,
 ): Promise<ClientWhatsAppConnection> {
-  await requireWhatsAppEntitlement(businessId);
   const setup = await getWhatsAppSetup(businessId);
   if (!setup)
     return {
@@ -36,13 +34,13 @@ export async function getClientWhatsAppConnection(
   const health =
     setup.status === "error"
       ? "needs_attention"
-      : setup.status === "connected" && setup.validationMode === "live"
+      : setup.status === "connected" && setup.testPassed && setup.validationMode === "live"
         ? "verified"
         : setup.status === "connected"
           ? "configured"
           : "not_available";
   return {
-    status: setup.status,
+    status: setup.status === "connected" && !(setup.testPassed && setup.validationMode === "live") ? "pending" : setup.status,
     displayName: setup.displayName,
     displayPhone: setup.displayPhone,
     catalogConnected: Boolean(setup.catalogEnabled && setup.catalogId),

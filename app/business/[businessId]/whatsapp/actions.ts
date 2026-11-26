@@ -1,5 +1,5 @@
 "use server";
-import { requireWhatsAppEntitlement, EntitlementError } from "@/lib/subscriptions/entitlements";
+import { EntitlementError } from "@/lib/subscriptions/entitlements";
 
 import { prepareWhatsAppTest } from "@/lib/admin/whatsapp-service";
 import { AdminValidationError } from "@/lib/admin/validation";
@@ -50,7 +50,6 @@ export async function previewWhatsAppTest(
 export async function requestWhatsAppSetup(businessId: string) {
   try {
     await requireDashboardAccess(businessId);
-    await requireWhatsAppEntitlement(businessId);
     return { ok: true, message: "Continue to WhatsApp setup.", url: `/business/${encodeURIComponent(businessId)}/whatsapp/setup` };
   } catch (error) {
     if (error instanceof EntitlementError) return { ok: false, ...error.details };

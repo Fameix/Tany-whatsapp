@@ -1,10 +1,14 @@
 import { verifyIntegrationAccess } from "@/lib/integration/access";
 
-export type DashboardSession = { role: "admin" } | { role: "business"; businessId: string };
+export type DashboardSession = { role: "admin" } | { role: "business"; businessId: string } | { role: "selector"; businessIds: string[] };
 /** Decode only to identify the candidate scope, then authenticate that exact scope. */
 export async function resolveDashboardSession(secret: string, token: string): Promise<DashboardSession | null> {
   try {
     if (token.length > 4096) return null;
+    if (token.startsWith("otp_")) {
+      const { resolvePhoneLoginSession } = await import("@/lib/admin/phone-login-service");
+      return await resolvePhoneLoginSession(token);
+    }
     const payload = token.split(".")[0];
     const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(payload.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0))));
     if (claims.scope?.kind === "directory" && await verifyIntegrationAccess(secret, token, { kind: "directory" }, Date.now(), "tany-dashboard-v1")) return { role: "admin" };

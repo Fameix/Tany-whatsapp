@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "messaging_businesses_whatsapp_phone_unique" ON "messaging_businesses" USING btree ("whatsapp_phone_number_id");

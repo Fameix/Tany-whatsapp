@@ -10,8 +10,12 @@ import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
 import { getBusinessConfig } from "@/lib/messaging/services/business-config-service";
 import { sendWhatsAppMessage } from "@/lib/messaging/whatsapp";
 import { sendingAccessToken } from "@/lib/whatsapp/runtime-account";
+import { automationPersistence } from "@/lib/automations/persistence";
+import { getRuntimeRecord, mutateRuntimeRecord, mutateRuntimeRecordById, postgresRuntimeMode } from "@/lib/messaging/services/postgres-runtime-records";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
 
 export function operationsBusiness(session: DashboardSession, requested?: string) {
+  if (session.role === "selector") throw new OperationsAccessError("BUSINESS_REQUIRED", "Select a business.", 400);
   if (session.role === "business") {
     if (requested && requested !== session.businessId) throw new OperationsAccessError("FORBIDDEN", "Business access denied.");
     return session.businessId;
@@ -35,6 +39,11 @@ function object(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 async function conversationRef(businessId: string, id: string) {
+  if (postgresRuntimeMode()) {
+    const data = await getRuntimeRecord<Record<string, unknown> & { id: string; businessId: string }>("conversations", businessId, documentId(id));
+    if (!data) throw new OperationsAccessError("NOT_FOUND", "Conversation not found.", 404);
+    return { ref: null, data };
+  }
   const ref = adminDb.collection("conversations").doc(documentId(id));
   const data = (await ref.get()).data();
   if (!data || data.businessId !== businessId) throw new OperationsAccessError("NOT_FOUND", "Conversation not found.", 404);
@@ -49,7 +58,8 @@ export async function mutateClientOperations(session: DashboardSession, requeste
   if (typeof value.id !== "string") throw new OperationsAccessError("INVALID_INPUT", "Choose a conversation.", 400);
   const { ref } = await conversationRef(businessId, value.id);
   if (action === "read") {
-    await ref.update({ dashboardReadAt: serverTimestamp(), unreadCount: 0 });
+    if (postgresRuntimeMode()) await mutateRuntimeRecordById("conversations", documentId(value.id), current => ({ ...current, dashboardReadAt: new Date(), unreadCount: 0 }));
+    else await ref!.update({ dashboardReadAt: serverTimestamp(), unreadCount: 0 });
     return;
   }
   if (action === "handoff") {
@@ -76,8 +86,8 @@ export async function sendOperatorMessage(session: DashboardSession, requested: 
   let text = typeof value.text === "string" ? value.text.trim() : "";
   let template: { name: string; language: { code: string }; components?: unknown[] } | undefined;
   if (typeof value.templateId === "string" && value.templateId) {
-    const raw = (await adminDb.collection("templates").doc(documentId(value.templateId)).get()).data();
-    if (!raw || raw.businessId !== businessId || raw.status !== "approved" || !/^[a-z0-9_]{1,120}$/.test(raw.name ?? "") || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(raw.language ?? ""))
+    const raw = await automationPersistence().get("templates", businessId, documentId(value.templateId));
+    if (!raw || raw.businessId !== businessId || raw.status !== "approved" || !/^[a-z0-9_]{1,120}$/.test(String(raw.name ?? "")) || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(raw.language ?? "")))
       throw new OperationsAccessError("INVALID_TEMPLATE", "Choose an approved template from this business.", 400);
     const parts = Array.isArray(raw.components) ? raw.components : [];
     if (parts.some((c: { type?: string; format?: string }) => c.type?.toUpperCase() !== "BODY" && c.type?.toUpperCase() !== "FOOTER"))
@@ -88,29 +98,34 @@ export async function sendOperatorMessage(session: DashboardSession, requested: 
     if (parameters.length !== numbers.length || numbers.some((n,i) => n !== i+1) || parameters.some(p => typeof p !== "string" || !p.trim() || p.length > 1000))
       throw new OperationsAccessError("TEMPLATE_FIELDS_REQUIRED", "Fill in every template field.", 400);
     text = String(body).replace(/\{\{(\d+)\}\}/g, (_, n) => parameters[Number(n)-1]);
-    template = { name: raw.name, language: { code: raw.language }, ...(parameters.length ? { components: [{ type: "body", parameters: parameters.map(p => ({ type: "text", text: p })) }] } : {}) };
+    template = { name: String(raw.name), language: { code: String(raw.language) }, ...(parameters.length ? { components: [{ type: "body", parameters: parameters.map(p => ({ type: "text", text: p })) }] } : {}) };
   } else {
     if (!text || text.length > 4096) throw new OperationsAccessError("INVALID_INPUT", "Enter a message up to 4,096 characters.", 400);
-    const incoming = await adminDb.collection("messages").where("businessId", "==", businessId).where("customerPhone", "==", phone).where("direction", "==", "incoming").get();
-    const latest = Math.max(0, ...incoming.docs.map(doc => {
-      const data = doc.data();
-      return /^\d{10}$/.test(data.whatsappTimestamp ?? "") ? Number(data.whatsappTimestamp) * 1000 : data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : 0;
-    }));
+    const incoming = postgresRuntimeMode() ? await new PostgresMessagingRepository().listRuntimeMessages(businessId).then(rows => rows.filter(row => row.customerPhone === phone && row.direction === "incoming")) : (await adminDb.collection("messages").where("businessId", "==", businessId).where("customerPhone", "==", phone).where("direction", "==", "incoming").get()).docs.map(doc => doc.data());
+    const latest = Math.max(0, ...incoming.map(data => /^\d{10}$/.test(String(data.whatsappTimestamp ?? "")) ? Number(data.whatsappTimestamp) * 1000 : data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : typeof data.createdAt === "string" ? Date.parse(data.createdAt) || 0 : 0));
     if (!latest || Date.now() - latest >= 24 * 3600000) throw new OperationsAccessError("TEMPLATE_REQUIRED", "The reply window has closed. Choose an approved template.", 409);
   }
   const id = `operator_${createHash("sha256").update(`${businessId}:${value.requestId}`).digest("hex")}`;
-  const messageRef = adminDb.collection("messages").doc(id);
-  const claimed = await adminDb.runTransaction(async tx => {
-    const existing = (await tx.get(messageRef)).data();
+  const messageRef = postgresRuntimeMode() ? null : adminDb.collection("messages").doc(id);
+  let claimed = false;
+  let duplicateStatus = "unknown";
+  const messageData = { id, businessId, customerPhone: phone, conversationId: value.id, direction: "outgoing", type: template ? "template" : "text", text, messageId: id, templateId: typeof value.templateId === "string" ? value.templateId : "", source: "operator", processingStatus: "received", deliveryStatus: "sending", createdAt: postgresRuntimeMode() ? new Date() : serverTimestamp() };
+  if (postgresRuntimeMode()) await mutateRuntimeRecord("messages", businessId, id, existing => {
     if (existing) {
-      if (existing.businessId !== businessId || existing.customerPhone !== phone || existing.text !== text || (existing.templateId ?? "") !== (value.templateId ?? ""))
-        throw new OperationsAccessError("REQUEST_CONFLICT", "This send request was already used for another message.", 409);
-      return false;
+      if (existing.customerPhone !== phone || existing.text !== text || (existing.templateId ?? "") !== (value.templateId ?? "")) throw new OperationsAccessError("REQUEST_CONFLICT", "This send request was already used for another message.", 409);
+      duplicateStatus = String(existing.deliveryStatus ?? "unknown"); return existing;
     }
-    tx.create(messageRef, { businessId, customerPhone: phone, conversationId: value.id, direction: "outgoing", type: template ? "template" : "text", text, messageId: id, templateId: typeof value.templateId === "string" ? value.templateId : "", source: "operator", processingStatus: "received", deliveryStatus: "sending", createdAt: serverTimestamp() });
-    return true;
+    claimed = true; return messageData;
   });
-  if (!claimed) return { duplicate: true, status: (await messageRef.get()).data()?.deliveryStatus ?? "unknown" };
+  else claimed = await adminDb.runTransaction(async tx => {
+    const existing = (await tx.get(messageRef!)).data();
+    if (existing) {
+      if (existing.businessId !== businessId || existing.customerPhone !== phone || existing.text !== text || (existing.templateId ?? "") !== (value.templateId ?? "")) throw new OperationsAccessError("REQUEST_CONFLICT", "This send request was already used for another message.", 409);
+      duplicateStatus = String(existing.deliveryStatus ?? "unknown"); return false;
+    }
+    const { id: _id, ...row } = messageData; void _id; tx.create(messageRef!, row); return true;
+  });
+  if (!claimed) return { duplicate: true, status: duplicateStatus };
   try {
     // Recheck access immediately before the external operation.
     if (!internalConsole) await requireClientConnection(businessId);
@@ -127,11 +142,14 @@ export async function sendOperatorMessage(session: DashboardSession, requested: 
     } else sent = await sendWhatsAppMessage({ phoneNumberId: business.whatsappPhoneNumberId, to: phone, reply: text });
     const providerId = sent?.messages?.[0]?.id;
     if (typeof providerId !== "string" || !providerId) throw new Error("Missing send receipt");
-    await messageRef.update({ messageId: providerId, processingStatus: "processed", deliveryStatus: "sent", updatedAt: serverTimestamp() });
-    await conversation.update({ dashboardReadAt: serverTimestamp() });
+    if (postgresRuntimeMode()) {
+      await mutateRuntimeRecordById("messages", id, current => ({ ...current, messageId: providerId, processingStatus: "processed", deliveryStatus: "sent", updatedAt: new Date() }));
+      await mutateRuntimeRecordById("conversations", documentId(value.id), current => ({ ...current, dashboardReadAt: new Date() }));
+    } else { await messageRef!.update({ messageId: providerId, processingStatus: "processed", deliveryStatus: "sent", updatedAt: serverTimestamp() }); await conversation!.update({ dashboardReadAt: serverTimestamp() }); }
     return { duplicate: false, status: "sent" };
   } catch {
-    await messageRef.update({ processingStatus: "failed", deliveryStatus: "failed", updatedAt: serverTimestamp() });
+    if (postgresRuntimeMode()) await mutateRuntimeRecordById("messages", id, current => ({ ...current, processingStatus: "failed", deliveryStatus: "failed", updatedAt: new Date() }));
+    else await messageRef!.update({ processingStatus: "failed", deliveryStatus: "failed", updatedAt: serverTimestamp() });
     throw new OperationsAccessError("SEND_FAILED", "WhatsApp could not confirm this send. Check message status before composing another reply.", 502);
   }
 }

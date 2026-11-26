@@ -5,7 +5,7 @@ const fixtures = require('./fixtures/business-data.json');
 async function seedDemoBusinesses(db, { dryRun = false } = {}) {
   const { FieldValue } = require('firebase-admin/firestore');
   const report = { businessesCreated: 0, catalogCreated: 0, catalogPreserved: 0, dryRun };
-  for (const vertical of ['eats', 'salon', 'motos']) {
+  for (const vertical of ['eats', 'motos', 'retail']) {
     const id = `demo-${vertical}`;
     const fixture = fixtures[vertical];
     const ref = db.collection('businesses').doc(id);
@@ -53,7 +53,9 @@ async function main() {
   const filename = path.join(root, 'lib/firebase-admin.ts');
   const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
   const loaded = { exports: {} };
-  vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename })(createRequire(filename), loaded, loaded.exports);
+  const nativeRequire = createRequire(filename);
+  const localRequire = (name) => name === 'server-only' ? {} : nativeRequire(name);
+  vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename })(localRequire, loaded, loaded.exports);
   const report = await seedDemoBusinesses(loaded.exports.adminDb, { dryRun: process.argv.includes('--dry-run') });
   console.log(JSON.stringify(report, null, 2));
 }

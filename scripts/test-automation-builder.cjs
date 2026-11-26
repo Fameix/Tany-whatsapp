@@ -540,6 +540,14 @@ async function main() {
     status: "approved",
     body: "Hello {{1}}",
   });
+  h.seed("whatsapp_accounts/a", {
+    businessId: "a",
+    phoneNumberId: "TEST_PHONE_NUMBER_ID",
+    wabaId: "123456",
+    displayPhone: "+919999999999",
+    tokenSecretName: "AUTOMATION_TEST_META_TOKEN",
+    status: "connected",
+  });
   await active(
     h,
     input("keyword.matched", [
@@ -547,9 +555,13 @@ async function main() {
     ]),
   );
   const oldFetch = global.fetch,
-    oldToken = process.env.META_ACCESS_TOKEN;
+    oldToken = process.env.AUTOMATION_TEST_META_TOKEN,
+    oldNames = process.env.WHATSAPP_TOKEN_SECRET_NAMES,
+    oldBindings = process.env.WHATSAPP_TOKEN_SECRET_BINDINGS;
   let sentTemplate;
-  process.env.META_ACCESS_TOKEN = "template-secret-test";
+  process.env.AUTOMATION_TEST_META_TOKEN = "template-secret-test";
+  process.env.WHATSAPP_TOKEN_SECRET_NAMES = "AUTOMATION_TEST_META_TOKEN";
+  process.env.WHATSAPP_TOKEN_SECRET_BINDINGS = JSON.stringify({ a: "AUTOMATION_TEST_META_TOKEN" });
   global.fetch = async (_url, options) => {
     sentTemplate = JSON.parse(options.body);
     return {
@@ -563,8 +575,12 @@ async function main() {
     assert.equal(runs(h)[0].status, "completed");
   } finally {
     global.fetch = oldFetch;
-    if (oldToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = oldToken;
+    if (oldToken === undefined) delete process.env.AUTOMATION_TEST_META_TOKEN;
+    else process.env.AUTOMATION_TEST_META_TOKEN = oldToken;
+    if (oldNames === undefined) delete process.env.WHATSAPP_TOKEN_SECRET_NAMES;
+    else process.env.WHATSAPP_TOKEN_SECRET_NAMES = oldNames;
+    if (oldBindings === undefined) delete process.env.WHATSAPP_TOKEN_SECRET_BINDINGS;
+    else process.env.WHATSAPP_TOKEN_SECRET_BINDINGS = oldBindings;
   }
   assert.ok(!JSON.stringify(runs(h)).includes("template-secret-test"));
   console.log(

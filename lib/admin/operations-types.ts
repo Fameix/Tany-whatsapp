@@ -78,6 +78,7 @@ export type OperationAccount = {
   displayName: string;
   phoneNumberId: string | null;
   wabaId: string | null;
+  tokenSecretName?: string | null;
   status: string;
   quality: string;
   subscription: string;

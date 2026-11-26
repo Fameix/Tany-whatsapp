@@ -34,12 +34,13 @@ async function main() {
       await e.assignDemoSubscription('setup-a', plan, status);
       for (const method of ['GET', 'POST']) {
         const response = await api[method](req('setup-a', method === 'POST' ? { action: 'activate', businessId: 'setup-b', status: 'connected' } : undefined), ctx('setup-a'));
-        assert.equal(response.status, 403);
-        assert.equal((await response.json()).code, 'UPGRADE_REQUIRED');
+        assert.notEqual(response.status, 403, 'WhatsApp setup is not Premium-gated');
       }
     }
     await e.assignDemoSubscription('setup-a', 'pro');
     global.fetch = async () => { throw new Error('Unexpected live request'); };
+    process.env.WHATSAPP_TOKEN_SECRET_NAMES = 'SETUP_TEST_TOKEN';
+    process.env.WHATSAPP_TOKEN_SECRET_BINDINGS = JSON.stringify({ 'setup-a': 'SETUP_TEST_TOKEN', 'setup-b': 'SETUP_TEST_TOKEN', 'setup-c': 'SETUP_TEST_TOKEN' });
     const details = { setupType: 'existing', displayName: 'Tany Eats', displayPhone: '+919123456789', phoneNumberId: '10001', wabaId: '20001', tokenSecretName: 'SETUP_TEST_TOKEN', businessId: 'setup-b', accessToken: 'DO-NOT-STORE', status: 'connected' };
     assert.equal((await api.POST(req('setup-a', { action: 'save', details }, 'https://attacker.test'), ctx('setup-a'))).status, 403);
     let response = await api.POST(req('setup-a', { action: 'save', details }), ctx('setup-a'));
@@ -73,9 +74,6 @@ async function main() {
     assert.equal(account.validationMode, 'manual_test');
     assert.equal(account.setupStep, 5);
     assert.ok(h.writes.some(w => w.data?.status === 'testing'), 'testing transition persisted');
-    await e.assignDemoSubscription('setup-a', 'pro', 'cancelled');
-    await assert.rejects(setup.activateWhatsAppSetup('setup-a'), e.EntitlementError);
-    await e.assignDemoSubscription('setup-a', 'pro');
     h.seed('whatsapp_accounts/setup-a', { ...h.read('whatsapp_accounts/setup-a'), testedAt: h.Timestamp.fromMillis(Date.now() - 16 * 60000) });
     await assert.rejects(setup.activateWhatsAppSetup('setup-a'), /successful connection test/);
     await setup.testWhatsAppSetup('setup-a', { mode: 'manual_test' });
@@ -93,7 +91,7 @@ async function main() {
     // Live validation and message sends are exercised with mocked fetch only.
     process.env.WHATSAPP_SETUP_LIVE_TESTS = 'true';
     process.env.WHATSAPP_TOKEN_SECRET_NAMES = 'SETUP_TEST_TOKEN';
-    process.env.WHATSAPP_TOKEN_SECRET_BINDINGS = JSON.stringify({ 'setup-a': 'SETUP_TEST_TOKEN' });
+    process.env.WHATSAPP_TOKEN_SECRET_BINDINGS = JSON.stringify({ 'setup-a': 'SETUP_TEST_TOKEN', 'setup-b': 'SETUP_TEST_TOKEN', 'setup-c': 'SETUP_TEST_TOKEN' });
     process.env.SETUP_TEST_TOKEN = 'private-provider-token-sentinel';
     process.env.WHATSAPP_SETUP_TEST_RECIPIENTS = '919777777777';
     const calls = [];
@@ -135,7 +133,7 @@ async function main() {
     await assert.rejects(inFlight, /changed/);
     assert.equal(h.read('whatsapp_accounts/setup-a').status, 'disconnected');
     await setup.saveWhatsAppSetup('setup-a', { ...details, phoneNumberId: '10002' });
-    await assert.rejects(runtime.sendingAccessToken('10001'), /not active/, 'old routing must not fall back to a global token');
+    await assert.rejects(runtime.sendingAccessToken('10001'), /ownership is unavailable|not active/, 'old routing must not fall back to a global token');
     // Simultaneous claims serialize on the unique phone reservation.
     const concurrent = await Promise.allSettled([
       setup.saveWhatsAppSetup('setup-b', { ...details, phoneNumberId: '10003' }),

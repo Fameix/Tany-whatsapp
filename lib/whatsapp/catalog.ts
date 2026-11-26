@@ -1,5 +1,7 @@
 import "server-only";
 import { getWhatsAppCatalogReviews } from "@/lib/whatsapp/catalog-review";
+import { databaseMode } from "@/lib/data/repository";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
 import { adminDb } from "@/lib/firebase-admin";
 import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
 import {
@@ -19,7 +21,14 @@ const mappings = (businessId: string) =>
     .collection("businesses")
     .doc(documentId(businessId))
     .collection("whatsapp_product_mappings");
+const postgresMode = () => databaseMode() === "postgres" || databaseMode() === "dual-write";
+const postgres = () => new PostgresMessagingRepository();
+const pgMapping = (row: Record<string, unknown> | null, businessId: string) => row ? ({
+  businessId, tanyProductId: row.tany_product_id, retailerProductId: row.retailer_product_id,
+  catalogId: row.catalog_id, whatsappReviewStatus: row.whatsapp_review_status, whatsappAvailability: row.whatsapp_availability,
+}) : null;
 export async function getCatalogConfiguration(businessId: string) {
+  if (postgresMode()) return postgres().getCatalogConfiguration(businessId);
   const data = (
     await adminDb
       .collection("whatsapp_accounts")
@@ -48,6 +57,7 @@ export async function saveCatalogConfiguration(
     (catalogEnabled && !catalogId)
   )
     throw new Error("Enter a valid Meta catalog ID.");
+  if (postgresMode()) return postgres().saveCatalogConfiguration(businessId, catalogId, catalogEnabled);
   const ref = adminDb
     .collection("whatsapp_accounts")
     .doc(documentId(businessId));
@@ -73,6 +83,14 @@ export async function mapCatalogProduct(
     throw new Error("Check the retailer product ID.");
   const config = await getCatalogConfiguration(businessId);
   if (!config.catalogId) throw new Error("Configure the Meta catalog first.");
+  if (postgresMode()) {
+    const product = await getCatalogItem(businessId, tanyProductId);
+    if (!product || product.type !== "product") throw new Error("Product does not belong to this business.");
+    const existing = await postgres().catalogMappings(businessId);
+    if (existing.some(row => row.tany_product_id !== tanyProductId && row.catalog_id === config.catalogId && row.retailer_product_id === retailerProductId)) throw new Error("Retailer product ID is already mapped.");
+    await postgres().saveCatalogMapping(businessId, tanyProductId, retailerProductId, config.catalogId);
+    return;
+  }
   const ref = mappings(businessId).doc(tanyProductId);
   await adminDb.runTransaction(async (tx) => {
     const product = (
@@ -109,6 +127,13 @@ export async function resolveCatalogProduct(
 ): Promise<CatalogItem | null> {
   const config = await getCatalogConfiguration(businessId);
   if (!config.catalogEnabled || config.catalogId !== catalogId) return null;
+  if (postgresMode()) {
+    const matches = (await postgres().catalogMappings(businessId)).filter(row => row.catalog_id === catalogId && row.retailer_product_id === retailerProductId);
+    if (matches.length !== 1) return null;
+    const mapping = matches[0];
+    const item = await getCatalogItem(businessId, String(mapping.tany_product_id));
+    return item?.available && item.type === "product" && item.price > 0 && item.metadata.stock !== 0 ? item : null;
+  }
   const matches = await mappings(businessId)
     .where("catalogId", "==", catalogId)
     .where("retailerProductId", "==", retailerProductId)
@@ -137,7 +162,8 @@ export async function catalogMenuReply(
   const ids: string[] = [];
   if (config.catalogEnabled) {
     const uniqueItems = [...new Map(items.filter(item => item.available && item.type === "product" && item.price > 0 && item.metadata.stock !== 0).map(item => [item.id, item])).values()];
-    const entries = await Promise.all(uniqueItems.map(async item => ({ item, mapping: (await mappings(businessId).doc(item.id).get()).data() })));
+    const allMappings = postgresMode() ? await postgres().catalogMappings(businessId) : null;
+    const entries = await Promise.all(uniqueItems.map(async item => ({ item, mapping: allMappings ? pgMapping(allMappings.find(row => row.tany_product_id === item.id) ?? null, businessId) : (await mappings(businessId).doc(item.id).get()).data() })));
     for (const { item, mapping } of entries) {
       if (!mapping || mapping.businessId !== businessId || mapping.tanyProductId !== item.id || mapping.catalogId !== config.catalogId || typeof mapping.retailerProductId !== "string" || !mapping.retailerProductId.trim() || mapping.retailerProductId.length > 100 || /[\r\n]/.test(mapping.retailerProductId)) continue;
       if (!ids.includes(mapping.retailerProductId)) ids.push(mapping.retailerProductId);
@@ -172,13 +198,15 @@ export async function catalogMenuReply(
 export async function resolveProductSequenceForSend(businessId: string, sequence: ProductSequenceReply): Promise<ProductSequenceReply> {
   const config = await getCatalogConfiguration(businessId);
   const [items, mapped, reviews] = await Promise.all([
-    getCatalog(businessId), mappings(businessId).get(),
+    getCatalog(businessId), postgresMode() ? postgres().catalogMappings(businessId) : mappings(businessId).get(),
     config.catalogEnabled ? getWhatsAppCatalogReviews(businessId, config.catalogId) : Promise.resolve(null),
   ]);
   const products = sequence.products.map(product => {
-    const mappingDoc = mapped.docs.find(doc => doc.data().businessId === businessId && doc.data().tanyProductId === doc.id && doc.data().retailerProductId === product.retailerProductId);
-    const mapping = mappingDoc?.data();
-    const item = mappingDoc ? items.find(item => item.id === mappingDoc.id && item.type === "product") : undefined;
+    const mapping = Array.isArray(mapped)
+      ? pgMapping(mapped.find(row => row.retailer_product_id === product.retailerProductId) ?? null, businessId)
+      : mapped.docs.find(doc => doc.data().businessId === businessId && doc.data().tanyProductId === doc.id && doc.data().retailerProductId === product.retailerProductId)?.data();
+    const mappedItemId = Array.isArray(mapped) ? String(mapping?.tanyProductId ?? "") : (mapping?.tanyProductId ?? "");
+    const item = mapping ? items.find(item => item.id === mappedItemId && item.type === "product") : undefined;
     const review = reviews?.get(product.retailerProductId);
     // Cached review data can be used if Meta could not be queried. A successful
     // Meta response (including a missing product) always takes precedence.
@@ -202,6 +230,7 @@ export async function resolveProductSequenceForSend(businessId: string, sequence
 }
 export async function catalogSettingsData(businessId: string) {
   const config = await getCatalogConfiguration(businessId);
+  if (postgresMode()) return { ...config, mappings: (await postgres().catalogMappings(businessId)).filter(row => row.catalog_id === config.catalogId).map(row => ({ tanyProductId: String(row.tany_product_id), retailerProductId: String(row.retailer_product_id) })) };
   const docs = await mappings(businessId).get();
   return {
     ...config,

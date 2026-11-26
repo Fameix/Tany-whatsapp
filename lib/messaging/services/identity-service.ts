@@ -13,6 +13,10 @@ import { getBusinessConfig } from "@/lib/messaging/services/business-config-serv
 import { sendWhatsAppMessage } from "@/lib/messaging/whatsapp";
 import { identityMenu } from "@/lib/messaging/identity-menu";
 import type { MessagingReply } from "@/lib/messaging/types";
+import { databaseMode } from "@/lib/data/repository";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
+const postgresIdentity = () => databaseMode() === "postgres" || databaseMode() === "dual-write";
+const pgIdentity = () => new PostgresMessagingRepository();
 
 export class LinkingError extends Error {
   constructor(
@@ -51,6 +55,10 @@ export async function resolveWhatsAppIdentity(
   phone: string,
 ): Promise<{ phone: string; uid: string } | null> {
   phone = whatsappPhone(phone);
+  if ( postgresIdentity()) {
+    const data = await pgIdentity().identity(phone);
+    return data?.linked === true && data.phone === phone && typeof data.uid === "string" && data.uid ? { phone, uid: data.uid } : null;
+  }
   const data = (
     await adminDb.collection("whatsapp_identities").doc(phone).get()
   ).data();
@@ -69,6 +77,10 @@ export async function createOrReuseLinkSession(
   phone = whatsappPhone(phone);
   await requireWhatsAppEntitlement(businessId);
   documentId(businessId);
+  if (postgresIdentity()) {
+    const pendingIntent = typeof originalText === "string" && originalText.trim() && originalText.length <= 1000 && !/^(hi|hello|start|reset|cancel|confirm|paid|yes|no|new order|start new order|start a new order)$/i.test(originalText.trim()) ? originalText : null;
+    return pgIdentity().createOrReuseLinkSession({ token: randomBytes(32).toString("hex"), phone, businessId, expiresAt: new Date(Date.now() + 15 * 60 * 1000), pendingIntent });
+  }
   const token = randomBytes(32).toString("hex");
   return adminDb.runTransaction(async (tx) => {
     const existing = await tx.get(
@@ -117,6 +129,17 @@ export function linkingReply(token: string): MessagingReply {
 }
 /** Caller must possess the random link capability; real mode also requires authentication. */
 export async function inspectLinkSession(token: string) {
+  if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) throw new LinkingError("invalid");
+  if (postgresIdentity()) {
+    const data = await pgIdentity().getLinkSession(token);
+    if (!data) throw new LinkingError("invalid");
+    if (data.used !== false) throw new LinkingError("used");
+    const expiresAt = data.expires_at instanceof Date ? data.expires_at.getTime() : typeof data.expires_at === "string" ? Date.parse(data.expires_at) : 0;
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new LinkingError("expired");
+    const scope = { whatsappPhone: whatsappPhone(String(data.whatsapp_phone)), businessId: documentId(String(data.legacy_business_id)) };
+    await requireWhatsAppEntitlement(scope.businessId);
+    return scope;
+  }
   const data = (await sessionRef(token).get()).data();
   const scope = validateSession(data);
   await requireWhatsAppEntitlement(scope.businessId);
@@ -134,6 +157,17 @@ export async function completeLinkSession(token: string, uid: string) {
     throw new LinkingError("invalid");
   const checked = await inspectLinkSession(token);
   await requireWhatsAppEntitlement(checked.businessId);
+  if (postgresIdentity()) {
+    try {
+      const scope = await pgIdentity().completeLinkSession(token, uid);
+      if (!scope) throw new LinkingError("expired");
+      return scope;
+    } catch (error) {
+      if (error instanceof LinkingError) throw error;
+      if (error instanceof Error && error.message === "POSTGRES_LINK_CONFLICT") throw new LinkingError("conflict");
+      throw error;
+    }
+  }
   const ref = sessionRef(token);
   const linked = await adminDb.runTransaction(async (tx) => {
     const session = (await tx.get(ref)).data();
@@ -196,6 +230,7 @@ export async function touchLinkedCustomer(
   businessId: string,
   identity: { phone: string; uid: string },
 ) {
+  if (postgresIdentity()) return pgIdentity().touchCustomer(businessId, whatsappPhone(identity.phone), identity.uid);
   const ref = adminDb
     .collection("customers")
     .doc(customerDocumentId(businessId, identity.phone));
@@ -226,6 +261,7 @@ export async function readPendingWhatsAppIntent(
   businessId: string,
   phone: string,
 ) {
+  if (postgresIdentity()) return pgIdentity().pendingIntent(businessId, whatsappPhone(phone));
   const data = (
     await adminDb
       .collection("customers")
@@ -242,6 +278,7 @@ export async function clearPendingWhatsAppIntent(
   phone: string,
   expected: string,
 ) {
+  if (postgresIdentity()) return pgIdentity().clearPendingIntent(businessId, whatsappPhone(phone), expected);
   const ref = adminDb
     .collection("customers")
     .doc(customerDocumentId(businessId, phone));
@@ -257,6 +294,23 @@ export async function notifyAccountLinked(
   scope: { businessId: string; whatsappPhone: string },
 ) {
   await requireWhatsAppEntitlement(scope.businessId);
+  if (postgresIdentity()) {
+    const session = await pgIdentity().getLinkSession(token);
+    if (!session || session.used !== true || session.notification_status !== "pending" || session.legacy_business_id !== scope.businessId || session.whatsapp_phone !== scope.whatsappPhone) return false;
+    const claimed = await pgIdentity().claimLinkNotification(token, scope.businessId, scope.whatsappPhone);
+    if (!claimed) return false;
+    try {
+      const business = await getBusinessConfig(scope.businessId);
+      if (!business?.active) throw new LinkingError("unavailable");
+      await sendWhatsAppMessage({ phoneNumberId: business.whatsappPhoneNumberId, to: scope.whatsappPhone, reply: "✅ Your Tany account is connected." });
+      await sendWhatsAppMessage({ phoneNumberId: business.whatsappPhoneNumberId, to: scope.whatsappPhone, reply: identityMenu(business.vertical) });
+      await pgIdentity().finishLinkNotification(token, scope.businessId, scope.whatsappPhone, "sent");
+      return true;
+    } catch {
+      await pgIdentity().finishLinkNotification(token, scope.businessId, scope.whatsappPhone, "failed");
+      return false;
+    }
+  }
   const ref = sessionRef(token);
   const claimed = await adminDb.runTransaction(async (tx) => {
     const data = (await tx.get(ref)).data();
