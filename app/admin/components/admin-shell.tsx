@@ -54,7 +54,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 
-type NavLink = { label: string; href: string; icon: LucideIcon; match?: string[] };
+type NavLink = { label: string; href: string; icon: LucideIcon; match?: string[]; nested?: boolean };
 
 /** Business workspaces get a customer-facing hierarchy; technical pages stay reachable
  * from Settings → WhatsApp diagnostics and keep their existing URLs. */
@@ -67,7 +67,7 @@ function businessNavigation(business: AdminBusiness): { primary: NavLink[]; seco
       { label: "Customers", href: `${root}/contacts`, icon: Users },
       { label: "Automations", href: `${root}/automations`, icon: Workflow },
       { label: "Campaigns", href: `${root}/campaigns`, icon: Megaphone },
-      { label: "Templates", href: `${root}/templates`, icon: FileText },
+      { label: "Templates", href: `${root}/templates`, icon: FileText, nested: true },
     ],
     secondary: [
       { label: "WhatsApp", href: `${root}/whatsapp`, icon: MessageCircle, match: [`${root}/whatsapp/setup`, `${root}/whatsapp-accounts`] },
@@ -81,7 +81,7 @@ const businessPageLabels: Record<string, string> = {
   "whatsapp-accounts": "WhatsApp account",
   "whatsapp/setup": "Connect WhatsApp",
 };
-const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname);
+const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname) || (!!link.nested && pathname.startsWith(`${link.href}/`));
 
 function linksFor(business?: AdminBusiness): NavLink[] {
   if (business) {
@@ -185,7 +185,7 @@ function Breadcrumb({ business }: { business?: AdminBusiness }) {
   const root = links[0].href;
   const current =
     links.find((entry) => entry.href === pathname)?.label ??
-    (business ? businessPageLabels[pathname.slice(root.length + 1)] : undefined) ??
+    (business ? businessPageLabels[pathname.slice(root.length + 1)] ?? (pathname.startsWith(`${root}/templates/`) ? "Template" : undefined) : undefined) ??
     (pathname.endsWith("/new") ? "New business" : business ? "Workspace" : "Business profile");
   return (
     <nav

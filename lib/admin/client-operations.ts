@@ -1,4 +1,5 @@
 import "server-only";
+import { isSendableWithBodyParameters } from "@/lib/templates/model";
 import { createHash } from "node:crypto";
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
@@ -90,7 +91,7 @@ export async function sendOperatorMessage(session: DashboardSession, requested: 
     if (!raw || raw.businessId !== businessId || raw.status !== "approved" || !/^[a-z0-9_]{1,120}$/.test(String(raw.name ?? "")) || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(String(raw.language ?? "")))
       throw new OperationsAccessError("INVALID_TEMPLATE", "Choose an approved template from this business.", 400);
     const parts = Array.isArray(raw.components) ? raw.components : [];
-    if (parts.some((c: { type?: string; format?: string }) => c.type?.toUpperCase() !== "BODY" && c.type?.toUpperCase() !== "FOOTER"))
+    if (!isSendableWithBodyParameters(parts))
       throw new OperationsAccessError("TEMPLATE_FIELDS_REQUIRED", "This template needs unsupported media or button fields. Choose a text template.", 400);
     const body = typeof raw.body === "string" ? raw.body : parts.find((c: { type?: string }) => c.type?.toUpperCase() === "BODY")?.text ?? "";
     const numbers = [...new Set(Array.from(String(body).matchAll(/\{\{(\d+)\}\}/g), m => Number(m[1])))].sort((a,b) => a-b);

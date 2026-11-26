@@ -28,7 +28,7 @@ export const actionOptions = {
   text: "Send text message",
   buttons: "Send WhatsApp buttons",
   list: "Send WhatsApp list",
-  template: "Send template",
+  template: "Send WhatsApp template",
   location: "Ask for location",
   payment_link: "Send payment link",
   handoff: "Assign to human",

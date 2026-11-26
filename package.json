@@ -39,7 +39,8 @@
     "dev:https": "node scripts/start-dev.cjs --https",
     "dev:https:trust": "node scripts/start-dev.cjs --https --trust",
     "test:whatsapp-disconnect-action": "node scripts/test-whatsapp-disconnect-action.cjs",
-    "test:cloudflare-build-config": "node --import tsx scripts/test-cloudflare-build-config.cjs"
+    "test:cloudflare-build-config": "node --import tsx scripts/test-cloudflare-build-config.cjs",
+    "test:template-library": "node --import tsx --conditions=react-server scripts/test-template-library.cjs"
   },
   "dependencies": {
     "@cloudflare/workers-response-store": "^1.1.3",

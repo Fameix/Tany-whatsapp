@@ -452,10 +452,10 @@ export async function createCampaignDraft(businessId: string, input: unknown, in
   if (
     !templates.some(
       (template) =>
-        template.id === data.template && template.status === "approved",
+        template.id === data.template && template.status === "approved" && template.category === "marketing",
     )
   )
-    throw new Error("Choose an approved template from this business");
+    throw new Error("Choose an approved Marketing template from this business");
   const campaignData = {
     businessId, name,
     template: str(data.template, 120), audience: str(data.audience, 240),

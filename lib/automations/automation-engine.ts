@@ -1,3 +1,4 @@
+import { isSendableWithBodyParameters } from "@/lib/templates/model";
 import {
   renderAutomationText,
   automationPlaceholderValues,
@@ -335,12 +336,8 @@ async function sendAction(
     const parts = Array.isArray(raw.components)
       ? (raw.components as Data[])
       : [];
-    if (
-      parts.some(
-        (p) => !["BODY", "FOOTER"].includes(String(p.type).toUpperCase()),
-      )
-    )
-      throw new Error("Only text templates are supported");
+    if (!isSendableWithBodyParameters(parts))
+      throw new Error("Only templates without media or dynamic buttons are supported");
     const body = String(
       raw.body ??
         parts.find((p) => String(p.type).toUpperCase() === "BODY")?.text ??

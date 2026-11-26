@@ -43,6 +43,58 @@ type Dashboard = {
   templates: { id: string; name: string; body: string }[];
 };
 const selectClass = "h-10 w-full rounded-md border bg-background px-3 text-sm";
+
+const contextSources: Array<{ token: (typeof automationPlaceholders)[number]; label: string }> = [
+  { token: "customer_name", label: "Customer name" },
+  { token: "business_name", label: "Business name" },
+  { token: "order_id", label: "Order ID" },
+  { token: "amount", label: "Amount" },
+  { token: "booking_date", label: "Booking date" },
+  { token: "booking_time", label: "Booking time" },
+];
+
+/** Maps each positional template variable to automation context or fixed text. Values use
+ * the engine's existing placeholders, so they are filled when the automation runs. */
+function TemplateVariableMapping({ body, parameters, onChange }: { body: string; parameters: string[]; onChange: (parameters: string[]) => void }) {
+  const variables = [...new Set(Array.from(body.matchAll(/\{\{(\d+)\}\}/g), (m) => Number(m[1])))].sort((x, y) => x - y);
+  if (!body) return <p className="text-xs text-muted-foreground">Choose an approved template to map its variables.</p>;
+  if (!variables.length) return <p className="text-xs text-muted-foreground">This template has no variables.</p>;
+  const values = variables.map((_, index) => parameters[index] ?? "");
+  const set = (index: number, value: string) => onChange(variables.map((_, i) => (i === index ? value : values[i])));
+  return (
+    <Field label="Template variables" hint="Fill each variable from the automation's context, or type fixed text.">
+      <div className="space-y-2">
+        {variables.map((n, index) => {
+          const source = contextSources.find((option) => values[index] === `{{${option.token}}}`);
+          return (
+            <div key={n} className="grid grid-cols-[3rem_1fr] items-center gap-2 sm:grid-cols-[3rem_11rem_1fr]">
+              <span className="font-mono text-xs text-muted-foreground">{`{{${n}}}`}</span>
+              <select
+                aria-label={`Source for variable ${n}`}
+                className={selectClass}
+                value={source ? source.token : "custom"}
+                onChange={(e) => set(index, e.target.value === "custom" ? "" : `{{${e.target.value}}}`)}
+              >
+                {contextSources.map((option) => <option key={option.token} value={option.token}>{option.label}</option>)}
+                <option value="custom">Custom text</option>
+              </select>
+              {!source && (
+                <Input
+                  aria-label={`Text for variable ${n}`}
+                  className="col-span-2 sm:col-span-1"
+                  value={values[index]}
+                  maxLength={1000}
+                  placeholder="Text to send"
+                  onChange={(e) => set(index, e.target.value)}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Field>
+  );
+}
 const blank = (): AutomationInput => ({
   name: "",
   description: "",
@@ -680,22 +732,11 @@ export function AutomationBuilder({
                                 ))}
                               </select>
                             </Field>
-                            <Field
-                              label="Template parameters (one per line)"
-                              hint="Text-only templates are supported in v1. Fill every numbered field in order."
-                            >
-                              <textarea
-                                className={`${selectClass} min-h-20 py-2`}
-                                value={a.parameters?.join("\n") ?? ""}
-                                onChange={(e) =>
-                                  updateAction(i, {
-                                    parameters: e.target.value
-                                      ? e.target.value.split("\n")
-                                      : [],
-                                  })
-                                }
-                              />
-                            </Field>
+                            <TemplateVariableMapping
+                              body={data?.templates.find((t) => t.id === a.templateId)?.body ?? ""}
+                              parameters={a.parameters ?? []}
+                              onChange={(parameters) => updateAction(i, { parameters })}
+                            />
                           </>
                         )}
                         {["tag", "state"].includes(a.type) && (

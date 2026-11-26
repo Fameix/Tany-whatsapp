@@ -1173,7 +1173,7 @@ function CampaignDraft({
           </select>
           <Label htmlFor="campaign-name">Campaign name</Label>
           <Input id="campaign-name" name="name" required maxLength={120} />
-          <Label htmlFor="campaign-template">Approved template</Label>
+          <Label htmlFor="campaign-template">Approved Marketing template</Label>
           <select
             key={businessId}
             id="campaign-template"
@@ -1184,7 +1184,7 @@ function CampaignDraft({
             <option value="">Choose template</option>
             {data.templates
               .filter(
-                (t) => t.businessId === businessId && t.status === "approved",
+                (t) => t.businessId === businessId && t.status === "approved" && t.category === "marketing",
               )
               .map((t) => (
                 <option key={t.id} value={t.id}>

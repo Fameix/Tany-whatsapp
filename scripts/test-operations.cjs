@@ -214,9 +214,25 @@ async function main() {
       audience: "Customers",
     }),
   );
+  await assert.rejects(
+    service.createCampaignDraft("a", {
+      name: "Utility campaign",
+      template: "template-a",
+      audience: "Customers",
+    }),
+    /approved Marketing template/,
+    "campaigns need an approved Marketing template",
+  );
+  h.seed("templates/marketing-a", {
+    businessId: "a",
+    name: "offer_a",
+    status: "approved",
+    language: "en",
+    category: "marketing",
+  });
   await service.createCampaignDraft("a", {
     name: "Safe draft",
-    template: "template-a",
+    template: "marketing-a",
     audience: "Opted-in customers",
   });
   const campaign = h.writes.find((w) => w.path.startsWith("campaigns/"));
