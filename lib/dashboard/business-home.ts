@@ -140,11 +140,11 @@ export async function getBusinessHome(business: { id: string; name: string; vert
 
   const metrics: HomeMetric[] = [
     { id: "needs-reply", label: "Needs reply", value: attention.length, detail: `${open} open conversation${open === 1 ? "" : "s"}`, href: `${root}/inbox` },
-    { id: "customers", label: "Customers today", value: customers24h, detail: incoming24h.length ? `${incoming24h.length} message${incoming24h.length === 1 ? "" : "s"} in the last 24 hours` : "No messages in the last 24 hours", href: `${root}/contacts` },
+    { id: "customers", label: "Customers today", value: customers24h, detail: incoming24h.length ? `${incoming24h.length} message${incoming24h.length === 1 ? "" : "s"} · last 24h` : "No messages · last 24h", href: `${root}/contacts` },
     automations.state === "ready"
-      ? { id: "automation-runs", label: "Automated replies", value: automations.runs, detail: automations.runs ? `${Math.round((automations.completed / automations.runs) * 100)}% completed · last 7 days` : "No runs in the last 7 days", href: `${root}/automations` }
-      : { id: "automation-runs", label: "Automated replies", value: null, detail: automations.state === "plan" ? "Available on the Pro plan" : "Not available right now", href: `${root}/automations` },
-    { id: "messages-sent", label: "Messages sent", value: sent7d.length, detail: sent7d.length ? `${Math.round((read7d / sent7d.length) * 100)}% read · ${Math.round((delivered7d / sent7d.length) * 100)}% delivered` : "None in the last 7 days", href: `${root}/campaigns` },
+      ? { id: "automation-runs", label: "Automated replies", value: automations.runs, detail: automations.runs ? `${Math.round((automations.completed / automations.runs) * 100)}% completed · 7 days` : "No runs · last 7 days", href: `${root}/automations` }
+      : { id: "automation-runs", label: "Automated replies", value: null, detail: automations.state === "plan" ? "On the Pro plan" : "Not available right now", href: `${root}/automations` },
+    { id: "messages-sent", label: "Messages sent", value: sent7d.length, detail: sent7d.length ? `${Math.round((read7d / sent7d.length) * 100)}% read · ${Math.round((delivered7d / sent7d.length) * 100)}% delivered` : "None · last 7 days", href: `${root}/campaigns` },
   ];
 
   return {

@@ -26,7 +26,7 @@ function MetricCard({ metric }: { metric: HomeMetric }) {
         <p className={cn("mt-2 text-[28px] font-semibold leading-8 tracking-tight tabular-nums", metric.value === null && "text-muted-foreground/50")}>
           {metric.value ?? "—"}
         </p>
-        <p className="mt-1 truncate text-xs text-muted-foreground">{metric.detail}</p>
+        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{metric.detail}</p>
       </Surface>
     </Link>
   );
