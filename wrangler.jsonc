@@ -1,11 +1,25 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tany-whatsapp",
+  "account_id": "8b98f4164cf5f4c0400f25a3f66b2ede",
   "compatibility_date": "2026-10-27",
   "compatibility_flags": [
     "nodejs_compat"
   ],
   "main": "vinext/server/fetch-handler",
+  // Temporary staging URL until a custom domain is mapped.
+  "workers_dev": true,
+  "preview_urls": false,
+  // Staging runtime mode. Secrets are managed with `wrangler secret`, never here.
+  "keep_vars": true,
+  "vars": {
+    "MESSAGING_DATABASE": "postgres",
+    "MESSAGING_POSTGRES_TARGET": "staging",
+    "WHATSAPP_TOKEN_SECRET_PROJECT": "tany-whatsapp",
+    "WHATSAPP_SETUP_LIVE_TESTS": "true",
+    "WHATSAPP_SETUP_ALLOW_MANUAL_TEST": "false",
+    "DEMO_AUTH_MODE": "false"
+  },
   "assets": {
     "directory": "dist/client",
     "html_handling": "none",
