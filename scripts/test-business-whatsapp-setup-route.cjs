@@ -129,6 +129,38 @@ async function main() {
     if (previousMode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousMode;
   }
 
+  // Staging proxy sends only session-less test-tenant setup visits to the tenant entry link.
+  const stagingKeys = ["MESSAGING_DATABASE", "MESSAGING_POSTGRES_TARGET", "DATABASE_URL"];
+  const previousStaging = Object.fromEntries(stagingKeys.map((key) => [key, process.env[key]]));
+  try {
+    const { proxy } = h.load("proxy.ts");
+    const visit = (path, cookie = "") => proxy(new NextRequest(`${origin}${path}`, { headers: { cookie } }));
+    const location = (response) => response.headers.get("location");
+    const testRetailToken = await signIntegrationAccess(secret, { kind: "business", businessId: "test-retail" }, Date.now(), "tany-dashboard-v1", 3600);
+    const testRetailSetup = await signWhatsAppSetupSession(secret, "test-retail");
+    Object.assign(process.env, { MESSAGING_DATABASE: "postgres", MESSAGING_POSTGRES_TARGET: "staging", DATABASE_URL: "postgresql://u:p@ep-staging.example.neon.tech/neondb" });
+    for (const [product, businessId] of [["retail", "test-retail"], ["eats", "test-eats"], ["motos", "test-motos"]]) {
+      const response = await visit(`/business/${businessId}/whatsapp/setup`);
+      assert.equal(response.status, 307);
+      assert.equal(location(response), `${origin}/${product}`, `${businessId} without a session goes through its entry link`);
+    }
+    assert.equal(location(await visit("/business/test-retail/whatsapp/setup?entry=1")), null, "entry marker never loops back");
+    assert.equal(location(await visit("/business/demo-retail/whatsapp/setup")), null, "non-test businesses are never redirected");
+    assert.equal(location(await visit("/business/test-retail/whatsapp")), null, "only the setup route is covered");
+    assert.equal(location(await visit("/business/test-eats/whatsapp/setup", `${dashboardSessionCookieName}=${testRetailToken}`)), null, "another tenant's session is still rejected by the page");
+    assert.equal(location(await visit("/business/test-retail/whatsapp/setup", `${dashboardSessionCookieName}=${adminToken}`)), null, "Super Admin is never given a business session");
+    assert.equal(location(await visit("/business/test-retail/whatsapp/setup", `${whatsappSetupSessionCookieName}=${testRetailSetup}`)), null);
+    process.env.MESSAGING_POSTGRES_TARGET = "production";
+    assert.equal(location(await visit("/business/test-retail/whatsapp/setup")), null, "non-staging target never redirects");
+    Object.assign(process.env, { MESSAGING_POSTGRES_TARGET: "staging", DATABASE_URL: "postgresql://u:p@prod-db.example.com/neondb" });
+    assert.equal(location(await visit("/business/test-retail/whatsapp/setup")), null, "production-looking database never redirects");
+    Object.assign(process.env, { DATABASE_URL: "postgresql://u:p@ep-staging.example.neon.tech/neondb", MESSAGING_DATABASE: "firestore" });
+    assert.equal(location(await visit("/business/test-retail/whatsapp/setup")), null, "Firestore mode never redirects");
+  } finally {
+    for (const key of stagingKeys) if (previousStaging[key] === undefined) delete process.env[key]; else process.env[key] = previousStaging[key];
+  }
+  console.log("PASS staging setup visits without a session use the test tenant entry link; sessions, other tenants and production are unaffected");
+
   // 4. Successful Meta signup keeps businessId and redirects to the business WhatsApp dashboard.
   const signupService = h.load("lib/whatsapp/embedded-signup-service.ts");
   const exchanged = [];

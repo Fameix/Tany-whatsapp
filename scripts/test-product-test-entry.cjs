@@ -35,7 +35,7 @@ async function main() {
   for (const [product, businessId] of [["retail", "test-retail"], ["eats", "test-eats"], ["motos", "test-motos"]]) {
     const response = await productTestEntryResponse(request(`/${product}`), product);
     assert.equal(response.status, 303);
-    assert.equal(response.headers.get("location"), `/business/${businessId}/whatsapp${product === "motos" ? "" : "/setup"}`);
+    assert.equal(response.headers.get("location"), `/business/${businessId}/whatsapp${product === "motos" ? "" : "/setup?entry=1"}`);
     const session = await sessions.resolveDashboardSession(secret, cookieValue(response, cookies.dashboardSessionCookieName));
     assert.deepEqual(session, { role: "business", businessId });
   }
