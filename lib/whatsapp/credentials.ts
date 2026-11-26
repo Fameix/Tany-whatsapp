@@ -109,8 +109,14 @@ function base64UrlText(value: string) {
   return base64Url(encoder.encode(value));
 }
 
+/** Secrets pasted into a dashboard may keep surrounding quotes; the value itself never does. */
+function credentialValue(raw: string | undefined) {
+  const value = raw?.trim() ?? "";
+  return value.length >= 2 && /^(["'])[\s\S]*\1$/.test(value) ? value.slice(1, -1).trim() : value;
+}
+
 function privateKeyBytes(pem: string) {
-  const body = pem.replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  const body = pem.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   if (!body || !/^[A-Za-z0-9+/=]+$/.test(body)) throw new CloudflareSecretManagerConfigurationError("Cloudflare Google service-account private key is invalid.");
   const decoded = atob(body);
   return Uint8Array.from(decoded, character => character.charCodeAt(0));
@@ -138,19 +144,25 @@ async function createServiceAccountAssertion(credentials: Required<CloudflareCre
   return `${unsigned}.${base64Url(new Uint8Array(signature))}`;
 }
 
-function googleApiError(status: number, payload: unknown) {
-  const errorValue = typeof payload === "object" && payload !== null && "error" in payload
-    ? (payload as { error?: { status?: string; message?: string } }).error
+/** Which Google call failed, so a storage failure can be diagnosed without its payload. */
+type GoogleOperation = "sign-jwt" | "oauth-token" | "create-secret" | "add-version" | "access-version";
+
+function googleApiError(status: number, payload: unknown, operation: GoogleOperation) {
+  const body = typeof payload === "object" && payload !== null && "error" in payload
+    ? payload as { error?: string | { status?: string; message?: string }; error_description?: string }
     : undefined;
+  // Secret Manager returns { error: { status, message } }; the OAuth token endpoint
+  // returns { error: "invalid_grant", error_description }.
+  const errorValue = typeof body?.error === "string" ? { status: body.error, message: body.error_description } : body?.error;
   const error = new Error(`Google Secret Manager request failed (${status}).`);
-  Object.assign(error, { response: { status, data: { error: errorValue } } });
+  Object.assign(error, { operation, response: { status, data: { error: errorValue } } });
   return error;
 }
 
-async function fetchJson<T>(fetcher: typeof fetch, url: string, init: RequestInit): Promise<T> {
+async function fetchJson<T>(fetcher: typeof fetch, url: string, init: RequestInit, operation: GoogleOperation): Promise<T> {
   const response = await fetcher(url, init);
   const payload = await response.json().catch(() => null) as T | null;
-  if (!response.ok) throw googleApiError(response.status, payload);
+  if (!response.ok) throw googleApiError(response.status, payload, operation);
   return payload as T;
 }
 
@@ -160,9 +172,9 @@ export function createCloudflareSecretManagerAdapter(
   options: { credentials?: CloudflareCredentials; fetcher?: typeof fetch; now?: () => number } = {},
 ): WhatsAppSecretManagerAdapter {
   const env = options.credentials ?? process.env;
-  const email = env.GCP_SERVICE_ACCOUNT_EMAIL?.trim() ?? "";
-  const privateKeyId = env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY_ID?.trim() ?? "";
-  const privateKey = env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY?.trim() ?? "";
+  const email = credentialValue(env.GCP_SERVICE_ACCOUNT_EMAIL);
+  const privateKeyId = credentialValue(env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY_ID);
+  const privateKey = credentialValue(env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY);
   if (!email || !privateKeyId || !privateKey || !email.endsWith(".iam.gserviceaccount.com"))
     throw new CloudflareSecretManagerConfigurationError();
   const credentials = { GCP_SERVICE_ACCOUNT_EMAIL: email, GCP_SERVICE_ACCOUNT_PRIVATE_KEY_ID: privateKeyId, GCP_SERVICE_ACCOUNT_PRIVATE_KEY: privateKey };
@@ -175,7 +187,8 @@ export function createCloudflareSecretManagerAdapter(
     if (cachedToken && cachedToken.expiresAt - now() > 60_000) return cachedToken.value;
     if (pendingToken) return pendingToken;
     pendingToken = (async () => {
-      const assertion = await createServiceAccountAssertion(credentials, now());
+      const assertion = await createServiceAccountAssertion(credentials, now())
+        .catch((error: unknown) => { throw Object.assign(error instanceof Error ? error : new Error(String(error)), { operation: "sign-jwt" }); });
       const body = new URLSearchParams({
         grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
         assertion,
@@ -184,7 +197,7 @@ export function createCloudflareSecretManagerAdapter(
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
-      });
+      }, "oauth-token");
       if (typeof response.access_token !== "string" || !response.access_token || typeof response.expires_in !== "number")
         throw new Error("Google OAuth returned an invalid access token response.");
       cachedToken = { value: response.access_token, expiresAt: now() + response.expires_in * 1000 };
@@ -205,7 +218,7 @@ export function createCloudflareSecretManagerAdapter(
       const result = await fetchJson<{ payload?: { data?: unknown } }>(fetcher, url, {
         method: "GET",
         headers: { Authorization: `Bearer ${await accessToken()}` },
-      });
+      }, "access-version");
       if (typeof result.payload?.data !== "string") return null;
       return new TextDecoder().decode(Uint8Array.from(atob(result.payload.data), character => character.charCodeAt(0)));
     },
@@ -217,7 +230,7 @@ export function createCloudflareSecretManagerAdapter(
           method: "POST",
           headers: { Authorization: authorization, "Content-Type": "application/json" },
           body: JSON.stringify({ replication: { automatic: {} } }),
-        });
+        }, "create-secret");
       } catch (error) {
         if (googleError(error).status !== 409) throw error;
       }
@@ -225,7 +238,7 @@ export function createCloudflareSecretManagerAdapter(
         method: "POST",
         headers: { Authorization: authorization, "Content-Type": "application/json" },
         body: JSON.stringify({ payload: { data: btoa(Array.from(encoder.encode(value), byte => String.fromCharCode(byte)).join("")) } }),
-      });
+      }, "add-version");
     },
   };
 }
@@ -268,7 +281,12 @@ export class CredentialStorageError extends Error {
 function googleError(error: unknown) {
   const response = typeof error === "object" && error && "response" in error
     ? (error as { response?: { status?: number; data?: { error?: { status?: string; message?: string } } } }).response : undefined;
-  return { status: response?.status, reason: response?.data?.error?.status ?? (error instanceof Error ? error.name : undefined), message: response?.data?.error?.message?.slice(0, 200) };
+  const message = response?.data?.error?.message ?? (error instanceof Error ? error.message : undefined);
+  return { status: response?.status, reason: response?.data?.error?.status ?? (error instanceof Error ? error.name : undefined), message: message === undefined ? undefined : sanitizedDiagnostic(message) };
+}
+/** Redacts anything token- or key-shaped from a diagnostic message. */
+function sanitizedDiagnostic(message: string) {
+  return message.replace(/Bearer\s+\S+/gi, "Bearer <redacted>").replace(/[A-Za-z0-9+/_.=-]{32,}/g, "<redacted>").slice(0, 200);
 }
 
 /** Stores an Embedded Signup token without putting it in Firestore, logs or the browser.
@@ -277,15 +295,16 @@ export async function storeEmbeddedSignupAccessToken(businessId: string, token: 
   const secretName = managedTokenSecretName(businessId);
   if (!/^[A-Za-z0-9._~\-]{20,4096}$/.test(token)) throw new Error("Invalid provider credential.");
   const project = projectId();
-  const log = (step: string, details: Record<string, unknown>) => console.info(`[EMBEDDED_SIGNUP] ${step}`, { businessId, project, secretName, ...details });
   try {
     await (await secretManagerAdapter()).writeSecret(project, secretName, token);
   } catch (error) {
     const details = googleError(error);
-    const operation = error instanceof Error && error.message.toLowerCase().includes("credential") ? "credentials" : "store-secret";
-    log("SECRET_STORE_FAILED", { operation, ...details });
+    const tagged = typeof error === "object" && error && "operation" in error ? String((error as { operation?: unknown }).operation) : undefined;
+    const operation = tagged ?? (error instanceof CloudflareSecretManagerConfigurationError ? "credentials" : "store-secret");
+    // One flat, sanitized error line: which Google call failed and why. Never the token, key or headers.
+    console.error(`[EMBEDDED_SIGNUP] SECRET_STORE_FAILED ${JSON.stringify({ businessId, operation, httpStatus: details.status ?? null, googleCode: details.reason ?? null, message: details.message ?? null, resource: `projects/${project}/secrets/${secretName}` })}`);
     throw new CredentialStorageError(operation, project, details.status, details.reason);
   }
-  log("SECRET_STORED", {});
+  console.info("[EMBEDDED_SIGNUP] SECRET_STORED", { businessId, project, secretName });
   return secretName;
 }

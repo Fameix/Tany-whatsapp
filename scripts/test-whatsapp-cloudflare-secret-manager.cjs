@@ -55,6 +55,34 @@ async function main() {
   assert.throws(() => createCloudflareSecretManagerAdapter({ credentials: {}, fetcher }), /credentials are not configured/);
   console.log("PASS missing Cloudflare credentials fail closed");
 
+  const escapedKey = credentials.GCP_SERVICE_ACCOUNT_PRIVATE_KEY.trim().replace(/\r?\n/g, "\\n");
+  const pasted = { GCP_SERVICE_ACCOUNT_EMAIL: `"${credentials.GCP_SERVICE_ACCOUNT_EMAIL}"`, GCP_SERVICE_ACCOUNT_PRIVATE_KEY_ID: ` ${credentials.GCP_SERVICE_ACCOUNT_PRIVATE_KEY_ID} `, GCP_SERVICE_ACCOUNT_PRIVATE_KEY: `"${escapedKey}"` };
+  const pastedCalls = calls.length;
+  await createCloudflareSecretManagerAdapter({ credentials: pasted, fetcher }).writeSecret("tany-whatsapp", "TANY_WA_DEMO_RETAIL_META_TOKEN", metaToken);
+  assert.ok(calls.length > pastedCalls, "quoted values and escaped \\n keys still sign a valid service-account JWT");
+  assert.throws(() => createCloudflareSecretManagerAdapter({ credentials: { GCP_SERVICE_ACCOUNT_EMAIL: "owner@example.com", GCP_SERVICE_ACCOUNT_PRIVATE_KEY_ID: "id", GCP_SERVICE_ACCOUNT_PRIVATE_KEY: "key" }, fetcher }), /credentials are not configured/, "a non-service-account email fails closed");
+  console.log("PASS pasted quotes or escaped newlines are accepted, and invalid credentials fail closed");
+
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => logged.push(args.join(" "));
+  const { storeEmbeddedSignupAccessToken: storeWithFailure, installWhatsAppSecretManagerAdapter } = await import("../lib/whatsapp/credentials.ts");
+  installWhatsAppSecretManagerAdapter(async () => createCloudflareSecretManagerAdapter({ credentials, fetcher: async () => Response.json({ error: "invalid_grant", error_description: `Invalid JWT Signature ${"A".repeat(40)} Bearer short-tok` }, { status: 400 }) }));
+  const previousProject = process.env.WHATSAPP_TOKEN_SECRET_PROJECT;
+  process.env.WHATSAPP_TOKEN_SECRET_PROJECT = "tany-whatsapp";
+  try { await assert.rejects(storeWithFailure("demo-retail", metaToken)); }
+  finally {
+    console.error = originalError;
+    installWhatsAppSecretManagerAdapter(undefined);
+    if (previousProject === undefined) delete process.env.WHATSAPP_TOKEN_SECRET_PROJECT; else process.env.WHATSAPP_TOKEN_SECRET_PROJECT = previousProject;
+  }
+  const failure = logged.find(line => line.includes("SECRET_STORE_FAILED")) ?? "";
+  assert.match(failure, /"operation":"oauth-token","httpStatus":400,"googleCode":"invalid_grant"/, "failure log names the failing Google call");
+  assert.equal(failure.includes(metaToken) || failure.includes("A".repeat(40)), false, "failure log never contains the token or token-like values");
+  assert.equal(failure.includes("short-tok"), false, "short bearer values are redacted too");
+  assert.match(failure, /Bearer <redacted>/);
+  console.log("PASS storage failure logs one sanitized line naming the failing Google operation");
+
   const wrongProjectCalls = calls.length;
   await assert.rejects(adapter.readSecret("another-project", "TANY_WA_DEMO_RETAIL_META_TOKEN"), /restricted to project tany-whatsapp/);
   assert.equal(calls.length, wrongProjectCalls, "wrong-project access performs no network request");
