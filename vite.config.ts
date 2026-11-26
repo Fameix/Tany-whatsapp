@@ -8,7 +8,6 @@ export default defineConfig({
   plugins: [
     vinext({
       cache: responseStoreAdapter({ mode: "self-contained" }),
-      prerender: { routes: "*" },
       images: { optimizer: imagesOptimizer() },
     }),
     cloudflare({
