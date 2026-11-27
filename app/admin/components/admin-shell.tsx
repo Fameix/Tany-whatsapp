@@ -70,7 +70,7 @@ function businessNavigation(business: AdminBusiness): { primary: NavLink[]; seco
       { label: "Templates", href: `${root}/templates`, icon: FileText, nested: true },
     ],
     secondary: [
-      { label: "WhatsApp", href: `${root}/whatsapp`, icon: MessageCircle, match: [`${root}/whatsapp/setup`, `${root}/whatsapp-accounts`] },
+      { label: "WhatsApp", href: `${root}/whatsapp`, icon: MessageCircle, match: [`${root}/whatsapp/setup`, `${root}/whatsapp-accounts`, `${root}/whatsapp/profile`] },
       { label: "Settings", href: `${root}/settings`, icon: Settings, match: [`${root}/message-status`, `${root}/webhook-health`] },
     ],
   };
@@ -80,6 +80,7 @@ const businessPageLabels: Record<string, string> = {
   "webhook-health": "Webhook health",
   "whatsapp-accounts": "WhatsApp account",
   "whatsapp/setup": "Connect WhatsApp",
+  "whatsapp/profile": "Business profile",
 };
 const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname) || (!!link.nested && pathname.startsWith(`${link.href}/`));
 

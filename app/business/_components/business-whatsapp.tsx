@@ -2,7 +2,16 @@ import { getPostgresBusinessAccount } from "@/lib/admin/postgres-directory";
 import { formatPhone } from "@/lib/dashboard/business-home";
 import { WhatsAppAccountActions } from "@/app/dashboard/messaging/_components/whatsapp-account-actions";
 import { StatusDot, Surface } from "./home/home-primitives";
-import { WhatsAppDiagnostics } from "./whatsapp-diagnostics";
+import { WhatsAppDiagnostics, WhatsAppProfileLink } from "./whatsapp-diagnostics";
+import Link from "next/link";
+import { getBusinessProfile } from "@/lib/whatsapp/business-profile";
+import { isProfileIncomplete } from "@/lib/whatsapp/business-profile-model";
+
+/** Optional next step after connecting; never blocks the connection. */
+async function profileIncomplete(businessId: string) {
+  try { return isProfileIncomplete((await getBusinessProfile(businessId)).profile); }
+  catch { return false; }
+}
 
 const statusCopy = (status: string) =>
   status === "Connected" ? { title: "Connected", tone: "success" as const, description: "Customers can message this number and Tany will reply." }
@@ -15,6 +24,7 @@ export async function BusinessWhatsApp({ businessId, detailed = false }: { busin
   const account = await getPostgresBusinessAccount(businessId);
   const status = account?.status ?? "Not connected";
   const copy = statusCopy(status);
+  const suggestProfile = !detailed && status === "Connected" && await profileIncomplete(businessId);
   const details = account ? [
     ["Display name", account.displayName],
     ["Phone number", account.phone ? formatPhone(account.phone) : "—"],
@@ -54,7 +64,21 @@ export async function BusinessWhatsApp({ businessId, detailed = false }: { busin
             </dl>
           </Surface>
         )
-        : <WhatsAppDiagnostics businessId={businessId} />}
+        : (
+          <>
+            {suggestProfile && (
+              <div className="flex flex-col gap-3 rounded-xl bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                <div>
+                  <p className="text-sm font-semibold">Complete your WhatsApp profile</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Add a picture, description and contact details so customers recognise your business. Optional.</p>
+                </div>
+                <Link href={`/business/${encodeURIComponent(businessId)}/whatsapp/profile`} className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90">Complete profile</Link>
+              </div>
+            )}
+            <WhatsAppProfileLink businessId={businessId} />
+            <WhatsAppDiagnostics businessId={businessId} />
+          </>
+        )}
     </div>
   );
 }

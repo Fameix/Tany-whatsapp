@@ -8,7 +8,7 @@ import { OperationsPanel } from "./operations-panel";
 import { PostgresDirectoryOverview } from "./postgres-directory-overview";
 import { databaseMode } from "@/lib/data/repository";
 import { BusinessWhatsApp } from "@/app/business/_components/business-whatsapp";
-import { WhatsAppDiagnostics } from "@/app/business/_components/whatsapp-diagnostics";
+import { WhatsAppDiagnostics, WhatsAppProfileLink } from "@/app/business/_components/whatsapp-diagnostics";
 
 export async function OperationsPage({
   businessId,
@@ -46,7 +46,15 @@ export async function OperationsPage({
             .map((p) => ({ id: p.id, name: p.name }))}
         />
       )}
-      {section === "settings" && businessId && <div className="mt-8"><WhatsAppDiagnostics businessId={businessId} /></div>}
+      {section === "settings" && businessId && (
+        <div className="mt-8 flex flex-col gap-6">
+          <section aria-labelledby="whatsapp-settings" className="flex flex-col gap-2">
+            <h2 id="whatsapp-settings" className="text-sm font-semibold tracking-tight">WhatsApp</h2>
+            <WhatsAppProfileLink businessId={businessId} />
+          </section>
+          <WhatsAppDiagnostics businessId={businessId} />
+        </div>
+      )}
     </>
   );
 }
