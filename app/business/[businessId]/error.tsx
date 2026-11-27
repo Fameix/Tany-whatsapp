@@ -23,9 +23,9 @@ export default function WorkspaceError({
 
   return (
     <Card role="alert" className="mx-auto max-w-lg gap-4 p-6">
-      <h1 className="text-lg font-semibold">Business data is unavailable</h1>
+      <h1 className="text-lg font-semibold">Business data is temporarily unavailable</h1>
       <p className="text-sm text-muted-foreground">
-        Check the Firestore connection, then try again.
+        Please try again.
       </p>
       <Button variant="outline" onClick={reset}>
         Try again

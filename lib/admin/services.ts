@@ -45,12 +45,12 @@ async function requireBusiness(businessId: string) {
 /** Share profile reads between the directory and switcher within a server render. */
 export const listBusinessProfiles = cache(
   async (): Promise<AdminBusiness[]> => {
-    if (databaseMode() === "postgres" || databaseMode() === "dual-write") return listPostgresBusinessProfiles();
-    const snapshot = await adminDb.collection("businesses").get();
-    return snapshot.docs.map(doc => {
-      const data = doc.data();
-      return { id: doc.id, name: String(data.name ?? ""), vertical: data.vertical, active: data.active === true, whatsappPhoneNumberId: String(data.whatsappPhoneNumberId ?? ""), settings: data.settings ?? {} } as AdminBusiness;
-    });
+    const mode = databaseMode();
+    if (mode === "postgres" || mode === "dual-write") {
+      return listPostgresBusinessProfiles();
+    }
+    const { listFirestoreBusinessProfiles } = await import("@/lib/admin/firestore-directory");
+    return listFirestoreBusinessProfiles();
   },
 );
 export async function listBusinesses(): Promise<BusinessListItem[]> {

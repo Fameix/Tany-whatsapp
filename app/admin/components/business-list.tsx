@@ -147,7 +147,7 @@ export function BusinessList({
         (count, business) => count + (business.conversationCount ?? 0),
         0,
       ),
-      detail: "Available in Messaging Postgres",
+      detail: "Across all businesses",
       icon: Package,
     },
   ];

@@ -20,7 +20,6 @@ export async function PostgresDirectoryOverview({ accountsOnly = false, business
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-        <p className="mb-1 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Standalone Messaging database</p>
         <h1 className="text-2xl font-semibold tracking-tight">{accountsOnly ? "WhatsApp Accounts" : "Overview"}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{showConnectionCta && business ? `Connect and manage WhatsApp for ${business.name}.` : "Directory and WhatsApp account status for every business."}</p>
         </div>
@@ -29,7 +28,7 @@ export async function PostgresDirectoryOverview({ accountsOnly = false, business
       {!accountsOnly && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{metrics.map(([label, value, Icon]) => <Card key={label} className="gap-2 p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">{label}</p><Icon className="size-4 text-muted-foreground" /></div><p className="text-2xl font-semibold tabular-nums">{value}</p></Card>)}</div>}
       <Card className="gap-0 overflow-hidden py-0">
         <div className="border-b px-4 py-3 text-sm font-semibold">Business WhatsApp status</div>
-        {accounts.length ? <div className="divide-y">{accounts.map((account) => <Link key={account.businessId} href={`/business/${encodeURIComponent(account.businessId)}`} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40"><BrandLogo vertical={account.vertical} decorative /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{account.business}</p><p className="truncate text-xs text-muted-foreground">{account.displayName} · {account.phone ?? "No number connected"}</p></div><span className="rounded-md border px-2 py-1 text-xs">{account.status}</span></Link>)}</div> : <p className="p-8 text-center text-sm text-muted-foreground">{business ? "No WhatsApp account has been configured for this business." : "No Messaging businesses have been created in Postgres."}</p>}
+        {accounts.length ? <div className="divide-y">{accounts.map((account) => <Link key={account.businessId} href={`/business/${encodeURIComponent(account.businessId)}`} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40"><BrandLogo vertical={account.vertical} decorative /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{account.business}</p><p className="truncate text-xs text-muted-foreground">{account.displayName} · {account.phone ?? "No number connected"}</p></div><span className="rounded-md border px-2 py-1 text-xs">{account.status}</span></Link>)}</div> : <p className="p-8 text-center text-sm text-muted-foreground">{business ? "No WhatsApp account has been configured for this business." : "No businesses to display."}</p>}
       </Card>
     </div>
   );
