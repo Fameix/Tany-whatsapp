@@ -33,6 +33,7 @@ import type { AdminBusiness } from "@/lib/admin/types";
 import { adminProductFromPath, adminProductPath, stagingBootstrapAttemptParam } from "@/lib/admin/product-routes";
 import { productNavigation, type ProductSection } from "@/lib/admin/product-navigation";
 import { workspaceProductModules, type WorkspaceProductModule } from "@/lib/admin/workspace-products";
+import { retailWhatsAppAdminPath, workspacePathFor } from "@/lib/admin/retail-whatsapp-route";
 import type { ActiveTanyVertical, TanyProduct } from "@/lib/messaging/vertical-config";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -156,7 +157,7 @@ function adminNavigation(): Array<{ label?: string; links: NavLink[] }> {
   ];
 }
 function Navigation({ links }: { links: NavLink[] }) {
-  const pathname = usePathname();
+  const pathname = workspacePathFor(usePathname());
   const { setOpenMobile } = useSidebar();
   return (
     <SidebarMenu>
@@ -240,7 +241,7 @@ function WorkspaceSidebar({
   );
 }
 function Breadcrumb({ business, product, businessProduct }: { business?: AdminBusiness; product?: TanyProduct; businessProduct: ActiveTanyVertical | null }) {
-  const pathname = usePathname();
+  const pathname = workspacePathFor(usePathname());
   const links = linksFor(business, product, businessProduct);
   const root = links[0].href;
   const current =
@@ -283,7 +284,8 @@ export function AdminShell({
 }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = workspacePathFor(rawPathname);
   const product = business ? undefined : adminProductFromPath(pathname);
   const title = business?.name ?? product?.name ?? "Tany Super Admin";
   useEffect(() => {
@@ -308,6 +310,9 @@ export function AdminShell({
     router.push(href);
   };
   const commands = linksFor(business, product, businessProduct);
+  // Tany Retail WhatsApp renders test-retail's own business workspace shell; the
+  // Super Admin chrome steps aside on that one path (sign-in is still enforced by the layout).
+  if (!business && rawPathname === retailWhatsAppAdminPath) return <>{children}</>;
   return (
     <TooltipProvider delayDuration={250}>
       <SidebarProvider

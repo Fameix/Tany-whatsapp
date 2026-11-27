@@ -1,6 +1,7 @@
 import { getPostgresBusinessAccount } from "@/lib/admin/postgres-directory";
 import { formatPhone } from "@/lib/dashboard/business-home";
 import { WhatsAppAccountActions } from "@/app/dashboard/messaging/_components/whatsapp-account-actions";
+import { connectionStatusView } from "@/lib/whatsapp/connection-status-view";
 import { StatusDot, Surface } from "./home/home-primitives";
 import { WhatsAppDiagnostics, WhatsAppProfileLink } from "./whatsapp-diagnostics";
 import Link from "next/link";
@@ -15,11 +16,7 @@ async function profileIncomplete(businessId: string) {
   catch { return false; }
 }
 
-const statusCopy = (status: string) =>
-  status === "Connected" ? { title: "Connected", tone: "success" as const, description: "Customers can message this number and Tany will reply." }
-    : status === "Not connected" ? { title: "Not connected", tone: "neutral" as const, description: "Connect your WhatsApp Business number to start messaging customers." }
-      : status.includes("unverified") ? { title: "Setup in progress", tone: "warning" as const, description: "Finish setup to start receiving customer messages." }
-        : { title: status, tone: "warning" as const, description: "Reconnect WhatsApp to resume messaging." };
+const statusCopy = connectionStatusView;
 
 /** Business WhatsApp page. `detailed` is the diagnostics view with account identifiers. */
 export async function BusinessWhatsApp({ businessId, detailed = false }: { businessId: string; detailed?: boolean }) {
@@ -50,10 +47,12 @@ export async function BusinessWhatsApp({ businessId, detailed = false }: { busin
             <p className="mt-1 text-xs text-muted-foreground">{copy.description}</p>
           </div>
         </div>
-        <div className="shrink-0">
-          <WhatsAppAccountActions status={status} hasConfiguredPhone={!!account?.phoneNumberId} businessId={businessId}
-            stagingHref={localStaging ? `${stagingWorkspaceUrl(businessId)}/whatsapp` : undefined} />
-        </div>
+        {copy.showActions && (
+          <div className="shrink-0">
+            <WhatsAppAccountActions status={status} hasConfiguredPhone={!!account?.phoneNumberId} businessId={businessId}
+              stagingHref={localStaging ? `${stagingWorkspaceUrl(businessId)}/whatsapp` : undefined} />
+          </div>
+        )}
       </Surface>
       {detailed
         ? details.length > 0 && (
