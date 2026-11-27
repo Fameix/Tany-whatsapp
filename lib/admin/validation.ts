@@ -28,13 +28,14 @@ export function jsonInput(value: unknown, field: string): ConversationContext {
     return mergeConversationContext({}, raw);
   } catch { throw new AdminValidationError({ [field]: "Use a valid JSON object, up to 32 KB, without unsafe keys." }); }
 }
-export function businessInput(value: unknown, creating: boolean) {
+/** `whatsappOptional`: a business may have no WhatsApp number yet (activation); Meta setup saves it later. */
+export function businessInput(value: unknown, creating: boolean, { whatsappOptional = false } = {}) {
   const data = objectInput(value, ["name", "vertical", "whatsappPhoneNumberId", "active", "settings", "products", ...(creating ? ["businessId"] : [])]);
   const name = stringInput(data.name, "name", 120);
   if (!isTanyVertical(data.vertical)) throw new AdminValidationError({ vertical: "Choose one of the 12 Tany verticals." });
   if (!isActiveTanyVertical(data.vertical)) throw new AdminValidationError({ vertical: "This Tany product is coming soon and cannot be configured yet." });
-  const phone = stringInput(data.whatsappPhoneNumberId, "whatsappPhoneNumberId", 100);
-  if (!/^[A-Za-z0-9_-]+$/.test(phone)) throw new AdminValidationError({ whatsappPhoneNumberId: "Use the phone number ID, with no spaces or slashes." });
+  const phone = stringInput(data.whatsappPhoneNumberId, "whatsappPhoneNumberId", 100, whatsappOptional);
+  if ((phone || !whatsappOptional) && !/^[A-Za-z0-9_-]+$/.test(phone)) throw new AdminValidationError({ whatsappPhoneNumberId: "Use the phone number ID, with no spaces or slashes." });
   const active = booleanInput(data.active, "active");
   let products: string[] | undefined;
   if (data.products !== undefined) {

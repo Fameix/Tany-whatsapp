@@ -138,7 +138,8 @@ export async function toggleBusiness(businessId: string, active: unknown) {
     const repo = await postgresRepositoryFor();
     const business = await repo.getBusiness(businessId);
     if (!business) throw new AdminValidationError({ businessId: "Business not found." });
-    if (value) businessInput({ name: business.name, vertical: business.vertical, whatsappPhoneNumberId: business.whatsappPhoneNumberId, active: true, settings: business.settings }, false);
+    // Activation never requires WhatsApp: a business is activated first and connects WhatsApp later.
+    if (value) businessInput({ name: business.name, vertical: business.vertical, whatsappPhoneNumberId: business.whatsappPhoneNumberId ?? "", active: true, settings: business.settings }, false, { whatsappOptional: true });
     await repo.setBusinessActive(businessId, value);
     return;
   }
@@ -153,12 +154,16 @@ export async function toggleBusiness(businessId: string, active: unknown) {
         {
           name: business.name,
           vertical: business.vertical,
-          whatsappPhoneNumberId: business.whatsappPhoneNumberId,
+          whatsappPhoneNumberId: business.whatsappPhoneNumberId ?? "",
           active: true,
           settings: business.settings ?? {},
         },
         false,
+        { whatsappOptional: true },
       );
+    }
+    // A connected number must still be this business's own; without one there is nothing to check.
+    if (value && business.whatsappPhoneNumberId) {
       await assertWhatsAppPhoneMapping(transaction, ref.id, business.whatsappPhoneNumberId);
       const phones = await transaction.get(
         adminDb
