@@ -45,7 +45,8 @@
     "test:whatsapp-business-profile": "node --import tsx --conditions=react-server scripts/test-whatsapp-business-profile.cjs",
     "test:super-admin-control-center": "node --import tsx --conditions=react-server scripts/test-super-admin-control-center.cjs",
     "test:retail-whatsapp": "node --import tsx --conditions=react-server scripts/test-retail-whatsapp.cjs",
-    "test:activation-without-whatsapp": "node --import tsx --conditions=react-server scripts/test-activation-without-whatsapp.cjs"
+    "test:activation-without-whatsapp": "node --import tsx --conditions=react-server scripts/test-activation-without-whatsapp.cjs",
+    "test:whatsapp-otp-login": "node --import tsx --conditions=react-server scripts/test-whatsapp-otp-login.cjs"
   },
   "dependencies": {
     "@cloudflare/workers-response-store": "^1.1.3",

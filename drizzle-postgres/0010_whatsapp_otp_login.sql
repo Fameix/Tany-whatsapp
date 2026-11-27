@@ -1,0 +1,4 @@
+ALTER TABLE "messaging_phone_login_challenges" ADD COLUMN "messaging_business_id" uuid;--> statement-breakpoint
+ALTER TABLE "messaging_phone_login_sessions" ADD COLUMN "tenant_locked" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "messaging_phone_login_challenges" ADD CONSTRAINT "messaging_phone_login_challenges_messaging_business_id_messaging_businesses_id_fk" FOREIGN KEY ("messaging_business_id") REFERENCES "public"."messaging_businesses"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "messaging_phone_login_challenges_tenant_phone_created_idx" ON "messaging_phone_login_challenges" USING btree ("messaging_business_id","phone","created_at");

@@ -61,7 +61,7 @@ async function WorkspaceLayout({
         if (setupAccess.ok && setupAccess.via === "setup-session")
           return <main className="tany-admin p-4 sm:p-6">{children}</main>;
       }
-      return <DashboardAccessRequired />;
+      return <DashboardAccessRequired businessId={businessId} />;
     }
     throw error;
   }

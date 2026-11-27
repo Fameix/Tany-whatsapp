@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 
-export function DashboardAccessRequired() {
+/** `businessId`: sign in to that business with a WhatsApp code from its own number. */
+export function DashboardAccessRequired({ businessId }: { businessId?: string } = {}) {
   const local = process.env.NODE_ENV === "development";
   return (
     <main className="tany-admin flex min-h-svh items-center justify-center p-4 sm:p-6">
@@ -30,7 +31,7 @@ export function DashboardAccessRequired() {
             signed workspace session.
           </p>
         )}
-        <a href="/login" className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+        <a href={businessId ? `/login?business=${encodeURIComponent(businessId)}` : "/login"} className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
           Sign in with phone
         </a>
       </Card>

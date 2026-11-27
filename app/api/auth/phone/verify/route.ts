@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { businessWorkspacePath } from "@/lib/admin/workspace-path";
-import { PhoneLoginError, verifyPhoneLoginOtp } from "@/lib/admin/phone-login-service";
+import { PhoneLoginError, verifyBusinessLoginOtp, verifyPhoneLoginOtp } from "@/lib/admin/phone-login-service";
 import { dashboardSessionCookieName, dashboardSessionCookieOptions } from "@/lib/admin/dashboard-cookie";
 
 export async function POST(request: NextRequest) {
   const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
   try {
-    const body = await request.json() as { phone?: unknown; code?: unknown };
-    if (typeof body.phone !== "string" || typeof body.code !== "string") throw new PhoneLoginError("INVALID_OTP", 401);
-    const result = await verifyPhoneLoginOtp(body.phone, body.code);
-    const location = result.businesses.length === 1 ? businessWorkspacePath(result.selectedBusinessId!) : "/dashboard/select-business";
-    const response = NextResponse.json({ businesses: result.businesses, location }, { headers });
+    const body = await request.json() as { phone?: unknown; code?: unknown; businessId?: unknown };
+    if (typeof body.phone !== "string" || typeof body.code !== "string" || (body.businessId !== undefined && typeof body.businessId !== "string")) throw new PhoneLoginError("INVALID_OTP", 401);
+    // WhatsApp OTP: a session for this one business (tenant-locked). SMS: the existing membership flow.
+    const result = body.businessId
+      ? await verifyBusinessLoginOtp(body.businessId, body.phone, body.code).then(({ token, businessId }) => ({ token, businesses: [], location: businessWorkspacePath(businessId) }))
+      : await verifyPhoneLoginOtp(body.phone, body.code).then(({ token, businesses, selectedBusinessId }) =>
+        ({ token, businesses, location: businesses.length === 1 ? businessWorkspacePath(selectedBusinessId!) : "/dashboard/select-business" }));
+    const response = NextResponse.json({ businesses: result.businesses, location: result.location }, { headers });
     response.cookies.set(dashboardSessionCookieName, result.token, { ...dashboardSessionCookieOptions, maxAge: 8 * 60 * 60 });
     return response;
   } catch (error) {
