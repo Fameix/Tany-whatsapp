@@ -17,7 +17,7 @@ async function main() {
   const { startersFor, findStarter } = await import("../lib/templates/starters.ts");
 
   // 1. Starters: product-scoped, valid for Meta once URLs are filled, never authentication.
-  const counts = { retail: 12, eats: 12, motos: 13 };
+  const counts = { retail: 13, eats: 13, motos: 14 };
   const keys = new Set();
   for (const [product, expected] of Object.entries(counts)) {
     const starters = startersFor(product);
@@ -38,7 +38,28 @@ async function main() {
   assert.ok(findStarter("retail", "retail_order_confirmed"));
   const urlStarter = findStarter("retail", "retail_order_confirmed");
   assert.ok(model.validateTemplate({ ...model.emptyTemplate(), ...urlStarter }).some(issue => issue.field === "buttons"), "website buttons need a real link before submission");
-  console.log("PASS Retail 12, Eats 12, Motos 13 product-scoped starters; all valid for Meta; no authentication starters");
+  console.log("PASS Retail 13, Eats 13, Motos 14 product-scoped starters; all valid for Meta; no authentication starters");
+
+  // Welcome is the first starter for each product: Marketing, quick replies only, featured.
+  const welcomes = {
+    retail: { business: "Tany Retail", replies: ["Shop products", "Track order", "Offers", "Talk to us"] },
+    eats: { business: "Tany Eats", replies: ["View menu", "Track order", "Offers", "Support"] },
+    motos: { business: "Tany Motos", replies: ["Browse vehicles", "Book test drive", "Check availability", "Talk to dealer"] },
+  };
+  for (const [product, expected] of Object.entries(welcomes)) {
+    const starters = startersFor(product);
+    const [first] = starters;
+    assert.equal(first.key, `${product}_welcome`, `${product} starts with its Welcome template`);
+    assert.equal(first.title, "Welcome");
+    assert.equal(first.category, "marketing");
+    assert.equal(first.featured, true, "Welcome is featured so it renders first");
+    assert.deepEqual(starters.filter(s => s.featured).map(s => s.key), [`${product}_welcome`], "only Welcome is featured");
+    assert.deepEqual(first.examples, ["Priya", expected.business]);
+    assert.deepEqual(first.buttons, expected.replies.map(text => ({ type: "QUICK_REPLY", text })), "suggested quick replies, no links to fill");
+    assert.match(first.body, /^Hi \{\{1\}\} 👋\n\nWelcome to \{\{2\}\}\./);
+    assert.deepEqual(model.validateTemplate({ ...model.emptyTemplate(), ...first }), [], `${first.key} is submittable as-is`);
+  }
+  console.log("PASS Welcome is the first, featured Marketing starter for Retail, Eats and Motos and submittable as-is");
 
   // 2. Meta rules and payload.
   const base = { ...model.emptyTemplate(), name: "order_update", body: "Hi {{1}}, order {{2}} is ready.", examples: ["Asha", "A1"] };

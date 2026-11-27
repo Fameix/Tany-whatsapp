@@ -49,17 +49,26 @@ function StarterCard({ starter, businessId, root }: { starter: StarterTemplate; 
 export function StarterLibrary({ starters, businessId, root, productLabel }: { starters: StarterTemplate[]; businessId: string; root: string; productLabel: string }) {
   if (!starters.length)
     return <p className="rounded-xl bg-card px-6 py-10 text-center text-sm text-muted-foreground shadow-[0_0_0_1px_rgb(9_9_11/0.06)]">Starter templates for {productLabel} are coming soon. You can still create a template from scratch.</p>;
-  const groups = (["utility", "marketing"] as const).map(category => ({ category, items: starters.filter(starter => starter.category === category) })).filter(group => group.items.length);
+  const featured = starters.filter(starter => starter.featured);
+  const groups = [
+    { id: "featured", title: "Start here", description: "Welcome a customer and offer what they can do", items: featured },
+    ...(["utility", "marketing"] as const).map(category => ({
+      id: category,
+      title: category === "utility" ? "Utility" : "Marketing",
+      description: category === "utility" ? "Order, payment and appointment updates" : "Offers, follow-ups and feedback",
+      items: starters.filter(starter => starter.category === category && !starter.featured),
+    })),
+  ].filter(group => group.items.length);
   return (
     <div className="flex flex-col gap-8">
       <p className="rounded-lg bg-muted/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
         Starter templates are ready-made drafts for {productLabel}. Using one creates a draft for your business that you can edit and then submit to Meta. Templates can only be sent after Meta approves them.
       </p>
       {groups.map(group => (
-        <section key={group.category} aria-labelledby={`starters-${group.category}`} className="flex flex-col gap-4">
+        <section key={group.id} aria-labelledby={`starters-${group.id}`} className="flex flex-col gap-4">
           <div className="flex items-baseline gap-2">
-            <h2 id={`starters-${group.category}`} className="text-sm font-semibold tracking-tight">{group.category === "utility" ? "Utility" : "Marketing"}</h2>
-            <span className="text-xs text-muted-foreground">{group.category === "utility" ? "Order, payment and appointment updates" : "Offers, follow-ups and feedback"} · {group.items.length}</span>
+            <h2 id={`starters-${group.id}`} className="text-sm font-semibold tracking-tight">{group.title}</h2>
+            <span className="text-xs text-muted-foreground">{group.description} · {group.items.length}</span>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {group.items.map(starter => <StarterCard key={starter.key} starter={starter} businessId={businessId} root={root} />)}

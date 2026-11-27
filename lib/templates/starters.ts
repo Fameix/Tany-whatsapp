@@ -9,6 +9,8 @@ export type StarterTemplate = Omit<TemplateContent, "language" | "header" | "foo
   key: string;
   title: string;
   purpose: string;
+  /** Shown first in the library, ahead of the category groups. */
+  featured?: boolean;
 };
 
 const url = (text: string): TemplateButton => ({ type: "URL", text, url: "" });
@@ -16,7 +18,16 @@ const reply = (text: string): TemplateButton => ({ type: "QUICK_REPLY", text });
 const starter = (key: string, title: string, purpose: string, category: StarterTemplate["category"], body: string, examples: string[], buttons: TemplateButton[] = []): StarterTemplate =>
   ({ key, name: key, title, purpose, category, body, examples, buttons });
 
+/** Welcome templates are business-initiated (re-engagement or first contact outside the
+ * 24-hour window). They don't replace the inbound "Hi" welcome automation, which replies
+ * inside an open conversation without needing a template. */
+const welcome = (key: string, body: string, business: string, replies: string[]): StarterTemplate =>
+  ({ ...starter(key, "Welcome", "Greet a customer and offer the main things they can do.", "marketing", body, ["Priya", business], replies.map(reply)), featured: true });
+
 const retail: StarterTemplate[] = [
+  welcome("retail_welcome",
+    "Hi {{1}} 👋\n\nWelcome to {{2}}.\n\nWe're happy to help you with products, availability, prices and orders.\n\nWhat would you like to do today?",
+    "Tany Retail", ["Shop products", "Track order", "Offers", "Talk to us"]),
   starter("retail_order_confirmed", "Order confirmed", "Confirm a new order and its total.", "utility",
     "Hi {{1}}, your order {{2}} has been confirmed.\n\nOrder total: ₹{{3}}\n\nWe'll let you know when it's ready.",
     ["Priya", "ORD-1042", "1,499"], [url("Track order"), reply("Contact store")]),
@@ -56,6 +67,9 @@ const retail: StarterTemplate[] = [
 ];
 
 const eats: StarterTemplate[] = [
+  welcome("eats_welcome",
+    "Hi {{1}} 👋\n\nWelcome to {{2}}.\n\nDiscover our menu, place an order or track your existing order.\n\nWhat can we help you with today?",
+    "Tany Eats", ["View menu", "Track order", "Offers", "Support"]),
   starter("eats_order_confirmed", "Order confirmed", "Confirm a food order and its total.", "utility",
     "Hi {{1}}, your order {{2}} has been confirmed by {{3}}.\n\nTotal: ₹{{4}}\n\nWe'll update you as it progresses.",
     ["Arjun", "#2045", "Spice Route Kitchen", "640"], [url("Track order")]),
@@ -96,6 +110,9 @@ const eats: StarterTemplate[] = [
 ];
 
 const motos: StarterTemplate[] = [
+  welcome("motos_welcome",
+    "Hi {{1}} 👋\n\nWelcome to {{2}}.\n\nWe can help you explore vehicles, check availability, book a test drive or get pricing details.\n\nHow can we help you today?",
+    "Tany Motos", ["Browse vehicles", "Book test drive", "Check availability", "Talk to dealer"]),
   starter("motos_enquiry_received", "Enquiry received", "Acknowledge a new vehicle enquiry.", "utility",
     "Hi {{1}}, we've received your enquiry for {{2}}.\n\nA member of {{3}} will assist you shortly.",
     ["Rahul", "Honda City 2021", "Tany Motors"]),
