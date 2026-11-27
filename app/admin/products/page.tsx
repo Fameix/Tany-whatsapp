@@ -2,14 +2,15 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { LoadingPanel } from "@/app/admin/components/shared";
-import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
-import { PageHeader, ProductStatus, isSuperAdmin, surface } from "@/app/admin/components/control-center/ui";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { PageHeader, ProductStatus, surface } from "@/app/admin/components/control-center/ui";
 import { tanyProducts } from "@/lib/messaging/vertical-config";
 import { adminProductPath } from "@/lib/admin/product-routes";
 
 async function Products() {
   await connection();
-  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 pb-8">
       <PageHeader title="Products" description="Check product availability and manage live product workspaces." />

@@ -1,3 +1,5 @@
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
@@ -9,6 +11,7 @@ async function LegacyCatalog({
   params: Promise<{ businessId: string }>;
 }) {
   await connection();
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { businessId } = await params;
   await loadBusiness(businessId);
   return redirect(`/business/${encodeURIComponent(businessId)}/catalog`);

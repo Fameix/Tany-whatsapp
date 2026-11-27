@@ -3,8 +3,9 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { cn } from "cn";
 import { LoadingPanel } from "@/app/admin/components/shared";
-import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
-import { BusinessTable, EmptyPanel, PageHeader, isSuperAdmin } from "@/app/admin/components/control-center/ui";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { BusinessTable, EmptyPanel, PageHeader } from "@/app/admin/components/control-center/ui";
 import { ToggleActive } from "@/app/admin/components/control-center/toggle-active";
 import { listProductBusinesses } from "@/lib/admin/product-center";
 import { tenantKindLabel, type TenantKind } from "@/lib/admin/tenant-classification";
@@ -16,7 +17,7 @@ const kinds: TenantKind[] = ["test", "demo", "migration"];
 /** Test, demo and migration tenants, kept out of product metrics. Nothing here is deleted automatically. */
 async function TestAndStaging({ searchParams }: Props) {
   await connection();
-  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const query = await searchParams;
   const product = typeof query.product === "string" && tanyProducts.some(p => p.id === query.product) ? query.product : null;
   const tenants = (await listProductBusinesses()).filter(business => business.kind !== "live" && (!product || business.product === product));

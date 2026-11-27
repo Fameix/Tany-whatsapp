@@ -4,8 +4,9 @@ import { notFound } from "next/navigation";
 import { CalendarCheck, ShoppingBag, Utensils } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { LoadingPanel } from "@/app/admin/components/shared";
-import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
-import { BusinessTable, EmptyPanel, ProductStatus, isSuperAdmin, surface } from "@/app/admin/components/control-center/ui";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { BusinessTable, EmptyPanel, ProductStatus, surface } from "@/app/admin/components/control-center/ui";
 import {
   BusinessAttention, MessagingActivity, MessagingHealth, OperationalMetrics, RecentActivity,
 } from "@/app/admin/components/control-center/operational-dashboard";
@@ -69,7 +70,7 @@ function ProductActivity({ info, data }: { info: (typeof context)[keyof typeof c
 
 async function ProductDetail({ params }: Props) {
   await connection();
-  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { product: id } = await params;
   const product = tanyProducts.find(candidate => candidate.id === id);
   if (!product) notFound();

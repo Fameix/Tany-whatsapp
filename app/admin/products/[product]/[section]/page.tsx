@@ -4,9 +4,10 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { AutomationBuilder } from "@/app/admin/components/automations/automation-builder";
 import { OperationsPanel } from "@/app/admin/components/operations-panel";
-import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import { LoadingPanel } from "@/app/admin/components/shared";
-import { BusinessTable, EmptyPanel, PageHeader, isSuperAdmin, surface } from "@/app/admin/components/control-center/ui";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { BusinessTable, EmptyPanel, PageHeader, surface } from "@/app/admin/components/control-center/ui";
 import { getOperationalOverview } from "@/lib/admin/operational-overview";
 import { getProductOperationsData } from "@/lib/admin/operations-service";
 import { productNavigation } from "@/lib/admin/product-navigation";
@@ -29,7 +30,7 @@ const descriptions = {
 
 async function ProductSectionPage({ params, searchParams }: Props) {
   await connection();
-  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { product: id, section: slug } = await params;
   const product = tanyProducts.find(item => item.id === id);
   if (!product) notFound();

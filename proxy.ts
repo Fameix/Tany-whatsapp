@@ -13,17 +13,21 @@ const localCookieOptions = { httpOnly: true, secure: false, sameSite: "lax" as c
 export async function proxy(request: NextRequest) {
   const hostname = request.nextUrl.hostname;
   const localStaging = isLocalStaging(hostname) && isLocalStaging(request.headers.get("host") ?? hostname);
-  const setupBusiness = businessSetupRouteBusinessId(request.nextUrl.pathname, request.nextUrl.origin);
-  const entry = localStaging ? null : await productTestEntryRedirect(request);
+  const [, area, businessId] = request.nextUrl.pathname.split("/");
+  // The route trees own authorization. Only business routes use setup handoffs,
+  // and /dashboard keeps its existing session or normal phone sign-in.
+  const setupBusiness = area === "business"
+    ? businessSetupRouteBusinessId(request.nextUrl.pathname, request.nextUrl.origin)
+    : null;
+  const entry = setupBusiness && !localStaging ? await productTestEntryRedirect(request) : null;
   if (entry) return entry;
   let credential: string | undefined;
   if (localStaging) {
     const secret = process.env.MESSAGING_SERVICE_SECRET ?? "";
     const token = request.cookies.get("tany-dashboard-dev")?.value ?? "";
     const valid = !!token && !token.startsWith("otp_") && (await resolveDashboardSession(secret, token)) !== null;
-    const [, area, businessId] = request.nextUrl.pathname.split("/");
-    const scope = area === "business" && isProductTestBusiness(businessId) ? { kind: "business" as const, businessId }
-      : area === "admin" || area === "dashboard" ? { kind: "directory" as const } : null;
+    const scope = area === "admin" ? { kind: "directory" as const }
+      : area === "business" && isProductTestBusiness(businessId) ? { kind: "business" as const, businessId } : null;
     if (scope && !valid && !token.startsWith("otp_") && secret.length >= 32) {
       credential = await signIntegrationAccess(secret, scope, Date.now(), "tany-dashboard-v1", localCookieOptions.maxAge);
       request.cookies.set("tany-dashboard-dev", credential);

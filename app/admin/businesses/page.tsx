@@ -4,14 +4,15 @@ import { connection } from "next/server";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingPanel } from "@/app/admin/components/shared";
-import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
-import { BusinessTable, EmptyPanel, HiddenTenantsNote, PageHeader, isSuperAdmin } from "@/app/admin/components/control-center/ui";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { BusinessTable, EmptyPanel, HiddenTenantsNote, PageHeader } from "@/app/admin/components/control-center/ui";
 import { listProductBusinesses, realBusinesses } from "@/lib/admin/product-center";
 
 /** Real businesses across all products. Test, demo and migration tenants live in Test & staging. */
 async function Directory() {
   await connection();
-  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const all = await listProductBusinesses();
   const businesses = realBusinesses(all);
   return (

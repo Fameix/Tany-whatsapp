@@ -6,7 +6,8 @@ const { createHarness } = require("./messaging-test-helpers.cjs");
 async function main() {
   process.env.MESSAGING_DATABASE = "postgres";
   const h = createHarness({ seedFixtures: false });
-  const sessions = h.load("lib/admin/dashboard-session.ts");
+  const sessions = h.load("lib/admin/super-admin-session.ts");
+  const { DashboardAuthorizationError } = h.load("lib/admin/dashboard-session.ts");
   const preferences = h.load("lib/admin/product-test-data.ts");
   const scopes = h.load("lib/admin/product-scope.ts");
   const setup = h.load("lib/whatsapp/setup-service.ts");
@@ -16,7 +17,9 @@ async function main() {
   let local = false;
   let include = true;
   const calls = [];
-  sessions.requireDashboardAccess = async () => role;
+  sessions.requireSuperAdmin = async () => {
+    if (role !== "admin") throw new DashboardAuthorizationError("Super Admin access required.", 403);
+  };
   preferences.productTestDataPreference = async () => ({ include, local });
   scopes.listProductProfiles = async (product, includeTest) => includeTest ? [{ id: `test-${product}`, name: product, active: true }] : [];
   setup.disconnectWhatsAppSetup = async id => { calls.push(["disconnect", id]); };

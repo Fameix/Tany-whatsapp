@@ -2,8 +2,9 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { LoadingPanel } from "./components/shared";
-import { DashboardAccessRequired } from "./components/dashboard-access-required";
-import { PageHeader, isSuperAdmin } from "./components/control-center/ui";
+import { SuperAdminSignInRequired } from "./components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { PageHeader } from "./components/control-center/ui";
 import { OperationalDashboard } from "./components/control-center/operational-dashboard";
 import { isTanyVertical } from "@/lib/messaging/vertical-config";
 import { getOperationalOverview } from "@/lib/admin/operational-overview";
@@ -13,7 +14,7 @@ type Props = { searchParams: Promise<{ product?: string | string[] }> };
 
 async function Overview({ searchParams }: Props) {
   await connection();
-  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { product } = await searchParams;
   if (isTanyVertical(product)) redirect(adminProductPath(product));
   return (

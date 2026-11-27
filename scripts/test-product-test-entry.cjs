@@ -68,6 +68,12 @@ async function main() {
     assert.deepEqual(await sessions.resolveDashboardSession(secret, token), { role: "business", businessId: tenant });
     assert.ok(response.headers.get("x-middleware-request-cookie")?.includes(token));
   }
+  for (const path of ["/admin", "/admin/products/retail", "/admin/products/retail/whatsapp"]) {
+    const token = cookieValue(await proxy(local(path)), "tany-dashboard-dev");
+    assert.deepEqual(await sessions.resolveDashboardSession(secret, token), { role: "admin" });
+    assert.equal(cookieValue(await proxy(local(path, unrelated)), "tany-dashboard-dev"), null);
+  }
+  assert.equal(cookieValue(await proxy(local("/dashboard")), "tany-dashboard-dev"), null, "dashboard does not bootstrap an admin session");
   assert.equal(cookieValue(await proxy(local("/business/test-retail", unrelated)), "tany-dashboard-dev"), null);
   assert.equal(cookieValue(await proxy(local("/business/test-retail", admin)), "tany-dashboard-dev"), null);
   assert.equal((await proxy(local("/business/phase6-motos"))).headers.get("x-middleware-request-cookie"), null);

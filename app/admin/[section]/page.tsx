@@ -1,3 +1,5 @@
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
@@ -6,6 +8,7 @@ import { LoadingPanel } from "../components/shared";
 import { operationSections } from "@/lib/admin/operations-types";
 async function Section({ params }: { params: Promise<{ section: string }> }) {
   await connection();
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { section } = await params;
   if (!operationSections.some((value) => value === section)) notFound();
   return (

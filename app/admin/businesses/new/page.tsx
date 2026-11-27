@@ -1,8 +1,15 @@
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import Link from "next/link";
+import { Suspense } from "react";
+import { connection } from "next/server";
+import { LoadingPanel } from "@/app/admin/components/shared";
 
 import { BusinessForm } from "@/app/admin/components/business-form";
 
-export default function NewBusinessPage() {
+async function NewBusiness() {
+  await connection();
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <Link
@@ -20,4 +27,8 @@ export default function NewBusinessPage() {
       <BusinessForm />
     </div>
   );
+}
+
+export default function NewBusinessPage() {
+  return <Suspense fallback={<LoadingPanel />}><NewBusiness /></Suspense>;
 }

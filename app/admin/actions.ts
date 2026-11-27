@@ -3,6 +3,7 @@
 import { EntitlementError } from "@/lib/subscriptions/entitlements";
 import { revalidatePath } from "next/cache";
 import { requireDashboardAccess } from "@/lib/admin/dashboard-session";
+import { requireSuperAdmin } from "@/lib/admin/super-admin-session";
 import { AdminValidationError } from "@/lib/admin/validation";
 import {
   createBusiness,
@@ -40,7 +41,7 @@ export async function saveBusinessAction(
   form: FormData,
 ): Promise<ActionState> {
   try {
-    await requireDashboardAccess();
+    await requireSuperAdmin();
     const input = {
       name: form.get("name"),
       vertical: form.get("vertical"),
@@ -66,7 +67,7 @@ export async function toggleBusinessAction(
   void _previous;
   void _form;
   try {
-    await requireDashboardAccess();
+    await requireSuperAdmin();
     await toggleBusiness(businessId, active);
     invalidate(businessId);
     return {

@@ -1,3 +1,5 @@
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +24,7 @@ import { verticalConfig } from "@/lib/messaging/vertical-config";
 
 async function Detail({ params }: { params: Promise<{ businessId: string }> }) {
   await connection();
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
 
   const { businessId } = await params;
 

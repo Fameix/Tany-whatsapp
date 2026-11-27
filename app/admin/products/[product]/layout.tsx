@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { isActiveTanyVertical, tanyProducts } from "@/lib/messaging/vertical-config";
 import { productTestDataPreference } from "@/lib/admin/product-test-data";
-import { isSuperAdmin } from "@/app/admin/components/control-center/ui";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
 import { TestDataControl } from "@/app/admin/components/control-center/test-data-control";
 
 export async function generateMetadata({ params }: { params: Promise<{ product: string }> }): Promise<Metadata> {

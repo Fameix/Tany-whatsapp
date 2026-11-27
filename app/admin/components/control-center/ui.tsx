@@ -1,17 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "cn";
-import { DashboardAuthorizationError, requireDashboardAccess } from "@/lib/admin/dashboard-session";
 import type { ProductBusiness } from "@/lib/admin/product-center";
 import { tenantKindLabel } from "@/lib/admin/tenant-classification";
 import { verticalConfig } from "@/lib/messaging/vertical-config";
-
-/** Pages render alongside their layout, so every Super Admin page checks access itself
- * before reading any data. */
-export async function isSuperAdmin() {
-  try { return (await requireDashboardAccess()) === "admin"; }
-  catch (error) { if (error instanceof DashboardAuthorizationError) return false; throw error; }
-}
 
 export const surface = "rounded-xl bg-card shadow-[0_1px_2px_rgb(9_9_11/0.05),0_0_0_1px_rgb(9_9_11/0.06)]";
 

@@ -4,11 +4,8 @@ import { AdminProductMenu, AdminProductMenuLoading } from "./components/control-
 import type { Metadata } from "next";
 import { AdminShell } from "./components/admin-shell";
 import { LoadingPanel } from "./components/shared";
-import { DashboardAccessRequired } from "./components/dashboard-access-required";
-import {
-  DashboardAuthorizationError,
-  requireDashboardAccess,
-} from "@/lib/admin/dashboard-session";
+import { SuperAdminSignInRequired } from "./components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
 import "./admin.css";
 export const metadata: Metadata = {
   title: "Tany Super Admin",
@@ -25,13 +22,7 @@ export default async function AdminLayout({
 }) {
   // The session check reads the current time, so the layout must render per request.
   await connection();
-  try {
-    await requireDashboardAccess();
-  } catch (error) {
-    if (error instanceof DashboardAuthorizationError)
-      return <DashboardAccessRequired />;
-    throw error;
-  }
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   return (
     <Suspense fallback={<LoadingPanel />}>
       <AdminShell

@@ -1,3 +1,5 @@
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
@@ -15,6 +17,7 @@ type Props = { params: Promise<{ product: string; businessId: string }> };
 
 async function Profile({ params }: Props) {
   await connection();
+  if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { product, businessId } = await params;
   const scope = await requireProductWhatsAppBusiness(product, businessId).catch((error: unknown) => {
     if (error instanceof DashboardAuthorizationError) notFound();

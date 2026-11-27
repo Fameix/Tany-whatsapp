@@ -59,7 +59,11 @@ function main() {
   assert.match(productSection, /listProductProfiles\(product\.id, includeTestData\)/);
   assert.doesNotMatch(productSection, /getOperationsData\(|listBusinessProfiles/);
   assert.match(source("lib/admin/operations-service.ts"), /aggregateOperations\(await listProductProfiles\(product, includeTestData\)/);
-  assert.match(source("app/admin/product-test-data-actions.ts"), /await requireDashboardAccess\(\) !== "admin"/);
+  assert.match(source("app/admin/product-test-data-actions.ts"), /await isSuperAdmin\(\)/);
+
+  assert.match(adminLayout, /isSuperAdmin\(\)/);
+  assert.match(adminLayout, /SuperAdminSignInRequired/);
+  assert.doesNotMatch(adminLayout, /DashboardAccessRequired|requireDashboardAccess/);
 
   const workspaceLayout = source("app/business/[businessId]/layout.tsx");
   assert.match(workspaceLayout, /requireDashboardAccess\(businessId\)/);
