@@ -3,6 +3,7 @@
 // /admin/products/retail/* page is the matching /business/test-retail/* page, and the
 // workspace's links stay inside Tany Retail. The WhatsApp page keeps its account states.
 const fs = require("node:fs");
+const proxy0 = () => fs.readFileSync("proxy.ts", "utf8");
 
 async function main() {
   const assert = (await import("node:assert/strict")).default;
@@ -20,7 +21,7 @@ async function main() {
   assert.equal(connectionStatusView("Error").showActions, true);
   console.log("PASS each WhatsApp account state shows the right message; only active businesses get actions");
 
-  const { retailWorkspaceTarget, workspaceRootFor } = await import("../lib/admin/retail-workspace.ts");
+  const { retailWorkspaceTarget, retiredRetailRedirect, workspaceRootFor } = await import("../lib/admin/retail-workspace.ts");
   const cases = {
     "/admin/products/retail": "/business/test-retail",
     "/admin/products/retail/": "/business/test-retail",
@@ -46,10 +47,17 @@ async function main() {
     "/business/test-retail": null,
   };
   for (const [path, target] of Object.entries(cases)) assert.equal(retailWorkspaceTarget(path), target, path);
+  for (const path of ["/admin/products/retail/stores", "/admin/products/retail/stores/x", "/admin/products/retail/staging"])
+    assert.equal(retiredRetailRedirect(path), "/admin/products/retail", `${path} opens the workspace, not the old directory`);
+  for (const path of ["/admin/products/retail", "/admin/products/retail/inbox", "/admin/products/eats/stores", "/admin/products/eats/restaurants"])
+    assert.equal(retiredRetailRedirect(path), null, path);
+  for (const file of ["app/admin/products/[product]/page.tsx", "app/admin/products/[product]/[section]/page.tsx"])
+    assert.match(fs.readFileSync(file, "utf8"), /if \(!product \|\| product\.id === "retail"\) notFound\(\);/, `${file}: the old Retail dashboard is never rendered`);
+  assert.match(proxy0(), /if \(retired\) \{/, "the proxy redirects old Retail URLs");
   assert.equal(workspaceRootFor("test-retail", true), "/admin/products/retail");
   assert.equal(workspaceRootFor("test-retail", false), "/business/test-retail");
   assert.equal(workspaceRootFor("test-eats", true), "/business/test-eats", "only test-retail is aliased");
-  console.log("PASS every Tany Retail page maps to test-retail's workspace; Stores stays Super Admin; Eats and Motos unchanged");
+  console.log("PASS every Tany Retail page maps to test-retail's workspace; old Retail dashboard URLs open the workspace; Eats and Motos unchanged");
 
   const proxy = fs.readFileSync("proxy.ts", "utf8");
   assert.match(proxy, /requestHeaders\.delete\(workspaceAliasHeader\);/, "a client-supplied alias marker is never trusted");

@@ -8,7 +8,7 @@ import { businessSetupRouteBusinessId, businessSetupRouteHeader, resolveWhatsApp
 import { isProductTestBusiness, productTestEntryMarker, productTestEntryPath } from "@/lib/admin/product-test-tenants";
 import { canIncludeStagingTestData, isLocalStaging } from "@/lib/admin/staging-environment";
 import { verifyDirectorySession } from "@/lib/admin/directory-session";
-import { retailWorkspaceTarget, workspaceAliasHeader } from "@/lib/admin/retail-workspace";
+import { retiredRetailRedirect, retailWorkspaceTarget, workspaceAliasHeader } from "@/lib/admin/retail-workspace";
 
 const localCookieOptions = { httpOnly: true, secure: false, sameSite: "lax" as const, path: "/", maxAge: 7 * 24 * 60 * 60 };
 
@@ -42,6 +42,12 @@ export async function proxy(request: NextRequest) {
   }
   // Super Admin → Tany Retail shows test-retail's workspace (lib/admin/retail-workspace). Anyone
   // else falls through to the admin route tree, which asks for Super Admin sign-in.
+  const retired = area === "admin" ? retiredRetailRedirect(request.nextUrl.pathname) : null;
+  if (retired) {
+    const redirect = NextResponse.redirect(new URL(retired, request.nextUrl.origin), 307);
+    redirect.headers.set("Cache-Control", "private, no-store");
+    return redirect;
+  }
   const aliasTarget = area === "admin" ? retailWorkspaceTarget(request.nextUrl.pathname) : null;
   const alias = aliasTarget && await verifyDirectorySession(process.env.MESSAGING_SERVICE_SECRET ?? "",
     request.cookies.get(dashboardSessionCookieName)?.value ?? "", request.headers.get("host") ?? hostname) ? aliasTarget : null;

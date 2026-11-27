@@ -31,7 +31,8 @@ async function ProductDetail({ params }: Props) {
   if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { product: id } = await params;
   const product = tanyProducts.find(candidate => candidate.id === id);
-  if (!product) notFound();
+  // Tany Retail's dashboard is its workspace (lib/admin/retail-workspace); the old overview is retired.
+  if (!product || product.id === "retail") notFound();
 
   const liveProduct = isActiveTanyVertical(product.id) ? product.id : null;
   const directory = liveProduct ? directories[liveProduct] : null;

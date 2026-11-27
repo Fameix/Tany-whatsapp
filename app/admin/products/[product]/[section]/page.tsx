@@ -23,7 +23,8 @@ async function ProductSectionPage({ params, searchParams }: Props) {
   if (!(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   const { product: id, section: slug } = await params;
   const product = tanyProducts.find(item => item.id === id);
-  if (!product) notFound();
+  // Tany Retail's pages are its workspace (lib/admin/retail-workspace); the old product pages are retired.
+  if (!product || product.id === "retail") notFound();
   const live = isActiveTanyVertical(product.id) ? product.id : null;
   const workspaceRedirect = live && productWorkspaceRedirect(live, slug);
   if (workspaceRedirect) redirect(workspaceRedirect);
