@@ -3,31 +3,40 @@ import { signIntegrationAccess } from "@/lib/integration/access";
 import { resolveDashboardSession } from "@/lib/admin/dashboard-access";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
-import { businessSetupRouteBusinessId, resolveWhatsAppSetupAccess } from "@/lib/admin/whatsapp-setup-access";
-import { productTestEntryMarker, productTestEntryPath, productTestStagingMode } from "@/lib/admin/product-test-tenants";
+import { businessSetupRouteBusinessId, businessSetupRouteHeader, resolveWhatsAppSetupAccess } from "@/lib/admin/whatsapp-setup-access";
+import { isProductTestBusiness, productTestEntryMarker, productTestEntryPath } from "@/lib/admin/product-test-tenants";
+import { canIncludeStagingTestData, isLocalStaging } from "@/lib/admin/staging-environment";
 
-const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const localCookieOptions = { httpOnly: true, secure: false, sameSite: "lax" as const, path: "/", maxAge: 7 * 24 * 60 * 60 };
 
 /** Standalone internal console: client subscription/login policy belongs to the integration APIs. */
 export async function proxy(request: NextRequest) {
-  const entry = await productTestEntryRedirect(request);
+  const hostname = request.nextUrl.hostname;
+  const localStaging = isLocalStaging(hostname) && isLocalStaging(request.headers.get("host") ?? hostname);
+  const setupBusiness = businessSetupRouteBusinessId(request.nextUrl.pathname, request.nextUrl.origin);
+  const entry = localStaging ? null : await productTestEntryRedirect(request);
   if (entry) return entry;
-  const response = NextResponse.next();
-  response.headers.set("Cache-Control", "private, no-store");
-  // Local-only convenience: issue the same signed directory credential the
-  // handoff route issues. The secret never leaves this server-side boundary.
-  if (process.env.NODE_ENV === "development" && localHosts.has(request.nextUrl.hostname)) {
+  let credential: string | undefined;
+  if (localStaging) {
     const secret = process.env.MESSAGING_SERVICE_SECRET ?? "";
     const token = request.cookies.get("tany-dashboard-dev")?.value ?? "";
-    // Never replace a valid business session with the directory (Super Admin) credential;
-    // only a missing or invalid dashboard cookie receives the local convenience session.
     const valid = !!token && !token.startsWith("otp_") && (await resolveDashboardSession(secret, token)) !== null;
-    if (!valid && !token.startsWith("otp_") && secret.length >= 32) {
-      const credential = await signIntegrationAccess(secret, { kind: "directory" }, Date.now(), "tany-dashboard-v1", 7 * 24 * 60 * 60);
-      response.cookies.set("tany-dashboard-dev", credential, localCookieOptions);
+    const [, area, businessId] = request.nextUrl.pathname.split("/");
+    const scope = area === "business" && isProductTestBusiness(businessId) ? { kind: "business" as const, businessId }
+      : area === "admin" || area === "dashboard" ? { kind: "directory" as const } : null;
+    if (scope && !valid && !token.startsWith("otp_") && secret.length >= 32) {
+      credential = await signIntegrationAccess(secret, scope, Date.now(), "tany-dashboard-v1", localCookieOptions.maxAge);
+      request.cookies.set("tany-dashboard-dev", credential);
     }
   }
+  const requestHeaders = new Headers(request.headers);
+  // Never trust a client-supplied marker. Only the canonical setup path can use a setup-only cookie in its layout.
+  requestHeaders.delete(businessSetupRouteHeader);
+  if (setupBusiness) requestHeaders.set(businessSetupRouteHeader, encodeURIComponent(setupBusiness));
+  const response = credential || setupBusiness || request.headers.has(businessSetupRouteHeader)
+    ? NextResponse.next({ request: { headers: requestHeaders } }) : NextResponse.next();
+  if (credential) response.cookies.set("tany-dashboard-dev", credential, localCookieOptions);
+  response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 /** Staging only: a visitor with no session on a test tenant's setup page is sent to that
@@ -38,7 +47,7 @@ async function productTestEntryRedirect(request: NextRequest) {
   if (nextUrl.searchParams.has(productTestEntryMarker)) return null;
   const businessId = businessSetupRouteBusinessId(nextUrl.pathname, nextUrl.origin);
   const entryPath = businessId ? productTestEntryPath(businessId) : null;
-  if (!businessId || !entryPath || !productTestStagingMode()) return null;
+  if (!businessId || !entryPath || !canIncludeStagingTestData(nextUrl.hostname)) return null;
   const access = await resolveWhatsAppSetupAccess(
     process.env.MESSAGING_SERVICE_SECRET ?? "",
     request.cookies.get(dashboardSessionCookieName)?.value ?? "",

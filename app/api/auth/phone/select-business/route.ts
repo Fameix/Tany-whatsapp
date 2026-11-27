@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { businessWorkspacePath } from "@/lib/admin/workspace-path";
 import { listPhoneLoginBusinesses, PhoneLoginError, selectPhoneLoginBusiness } from "@/lib/admin/phone-login-service";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as { businessId?: unknown };
     if (typeof body.businessId !== "string" || !body.businessId) throw new PhoneLoginError("BUSINESS_FORBIDDEN", 403);
     await selectPhoneLoginBusiness(tokenFrom(request), body.businessId);
-    return NextResponse.json({ location: `/business/${encodeURIComponent(body.businessId)}` }, { headers });
+    return NextResponse.json({ location: businessWorkspacePath(body.businessId) }, { headers });
   } catch (error) {
     const failure = error instanceof PhoneLoginError ? error : null;
     return NextResponse.json({ message: "That business is not available for this account." }, { status: failure?.status ?? 503, headers });

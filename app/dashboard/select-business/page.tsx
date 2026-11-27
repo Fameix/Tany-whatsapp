@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { getDashboardSession } from "@/lib/admin/dashboard-session";
+import { businessWorkspacePath } from "@/lib/admin/workspace-path";
 import { SelectBusiness } from "./select-business";
 
 async function WorkspaceSelector() {
@@ -10,7 +11,7 @@ async function WorkspaceSelector() {
   try { session = await getDashboardSession(); }
   catch { redirect("/login"); }
   if (session.role === "admin") redirect("/admin");
-  if (session.role === "business") redirect(`/business/${encodeURIComponent(session.businessId)}`);
+  if (session.role === "business") redirect(businessWorkspacePath(session.businessId));
   return <main className="mx-auto min-h-screen w-full max-w-2xl px-5 py-16">
     <p className="text-sm font-semibold text-slate-500">Tany Messaging</p>
     <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Choose a business</h1>

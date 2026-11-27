@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { businessWorkspacePath } from "@/lib/admin/workspace-path";
 import { PhoneLoginError, verifyPhoneLoginOtp } from "@/lib/admin/phone-login-service";
 import { dashboardSessionCookieName, dashboardSessionCookieOptions } from "@/lib/admin/dashboard-cookie";
 
@@ -8,7 +9,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as { phone?: unknown; code?: unknown };
     if (typeof body.phone !== "string" || typeof body.code !== "string") throw new PhoneLoginError("INVALID_OTP", 401);
     const result = await verifyPhoneLoginOtp(body.phone, body.code);
-    const location = result.businesses.length === 1 ? `/business/${encodeURIComponent(result.selectedBusinessId!)}` : "/dashboard/select-business";
+    const location = result.businesses.length === 1 ? businessWorkspacePath(result.selectedBusinessId!) : "/dashboard/select-business";
     const response = NextResponse.json({ businesses: result.businesses, location }, { headers });
     response.cookies.set(dashboardSessionCookieName, result.token, { ...dashboardSessionCookieOptions, maxAge: 8 * 60 * 60 });
     return response;

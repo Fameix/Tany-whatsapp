@@ -7,6 +7,9 @@ import { canViewBusiness } from "@/app/business/_components/business-access";
 import { loadBusiness } from "@/app/business/_components/load-business";
 import { ProfileEditor } from "@/app/business/_components/whatsapp-profile/profile-editor";
 import { BusinessProfileError, getBusinessProfile } from "@/lib/whatsapp/business-profile";
+import { localStagingWorkspace } from "@/lib/admin/product-test-data";
+import { stagingWorkspaceUrl } from "@/lib/admin/staging-environment";
+import { getPostgresBusinessAccount } from "@/lib/admin/postgres-directory";
 
 type Props = { params: Promise<{ businessId: string }> };
 
@@ -31,6 +34,11 @@ async function Profile({ params }: Props) {
   const { businessId } = await params;
   if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;
   await loadBusiness(businessId);
+  if (await localStagingWorkspace()) {
+    const account = await getPostgresBusinessAccount(businessId);
+    return <ProfileEditor businessId={businessId} initial={null} storedAccount={account ?? undefined}
+      stagingHref={`${stagingWorkspaceUrl(businessId)}/whatsapp/profile`} />;
+  }
   const whatsapp = `/business/${encodeURIComponent(businessId)}/whatsapp`;
   const result = await getBusinessProfile(businessId).catch((error: unknown) => {
     if (error instanceof BusinessProfileError) return error;

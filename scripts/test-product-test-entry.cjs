@@ -2,7 +2,7 @@
 const assert = require("node:assert/strict");
 const { createHarness } = require("./messaging-test-helpers.cjs");
 
-const origin = "https://staging.test";
+const origin = "https://tany-whatsapp.tany-8b9.workers.dev";
 const secret = "product-test-entry-secret-long-enough-for-hmac-2026";
 const cookieValue = (response, name) => {
   const entry = (response.headers.getSetCookie?.() ?? []).find((value) => value.startsWith(`${name}=`));
@@ -12,7 +12,7 @@ const cookieValue = (response, name) => {
 async function main() {
   process.env.MESSAGING_POSTGRES_TARGET = "staging";
   process.env.MESSAGING_DATABASE = "postgres";
-  process.env.DATABASE_URL = "postgresql://staging.test/messaging";
+  process.env.DATABASE_URL = "postgresql://ep-shiny-boat-bifvzzhe-pooler.c-5.ap-southeast-1.aws.neon.tech/neondb";
   process.env.MESSAGING_SERVICE_SECRET = secret;
   const h = createHarness({ seedFixtures: false });
   const { NextRequest } = require("next/server");
@@ -55,6 +55,32 @@ async function main() {
   const unrelated = await access.signIntegrationAccess(secret, { kind: "business", businessId: "demo-retail" }, Date.now(), "tany-dashboard-v1", 3600);
   assert.equal((await productTestEntryResponse(request("/retail", unrelated), "retail")).status, 403);
   console.log("PASS Super Admin stays unchanged and an unrelated business session cannot enter a product test tenant");
+
+  const { proxy } = h.load("proxy.ts");
+  process.env.DATABASE_URL = "postgresql://ep-shiny-boat-bifvzzhe-pooler.c-5.ap-southeast-1.aws.neon.tech/neondb";
+  const local = (path, token = "") => new NextRequest(`http://127.0.0.1:3197${path}`, {
+    headers: token ? { cookie: `tany-dashboard-dev=${token}` } : {},
+  });
+  process.env.NODE_ENV = "development";
+  for (const tenant of ["test-retail", "test-eats", "test-motos"]) {
+    const response = await proxy(local(`/business/${tenant}`));
+    const token = cookieValue(response, "tany-dashboard-dev");
+    assert.deepEqual(await sessions.resolveDashboardSession(secret, token), { role: "business", businessId: tenant });
+    assert.ok(response.headers.get("x-middleware-request-cookie")?.includes(token));
+  }
+  assert.equal(cookieValue(await proxy(local("/business/test-retail", unrelated)), "tany-dashboard-dev"), null);
+  assert.equal(cookieValue(await proxy(local("/business/test-retail", admin)), "tany-dashboard-dev"), null);
+  assert.equal((await proxy(local("/business/phase6-motos"))).headers.get("x-middleware-request-cookie"), null);
+  const nonLocalHost = new NextRequest("http://localhost:3000/admin", { headers: { host: "staging.example" } });
+  assert.equal(cookieValue(await proxy(nonLocalHost), "tany-dashboard-dev"), null, "external Host never receives a dev session");
+  process.env.NODE_ENV = "production";
+  const production = await proxy(local("/business/test-retail"));
+  assert.equal(cookieValue(production, "tany-dashboard-dev"), null);
+  assert.equal(production.headers.get("x-middleware-request-cookie"), null);
+  assert.equal((await productTestEntryResponse(new NextRequest("https://production.example/retail"), "retail")).status, 404);
+  process.env.MESSAGING_POSTGRES_TARGET = "production";
+  assert.equal((await productTestEntryResponse(request("/retail"), "retail")).status, 404);
+  console.log("PASS first-request bootstrap is limited to eligible loopback staging requests and preserves existing sessions");
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

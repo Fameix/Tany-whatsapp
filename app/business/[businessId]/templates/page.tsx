@@ -14,6 +14,7 @@ import { refreshPendingTemplates } from "@/lib/templates/meta-templates";
 import { renderTemplateBody } from "@/lib/templates/model";
 import { listBusinessTemplates, TemplateStoreUnavailableError } from "@/lib/templates/repository";
 import { startersFor } from "@/lib/templates/starters";
+import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 
 type Props = { params: Promise<{ businessId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -30,7 +31,7 @@ async function Templates({ params, searchParams }: Props) {
   try {
     templates = await listBusinessTemplates(businessId);
     // Show Meta's latest review result for templates still in review.
-    if (view === "mine" && (await refreshPendingTemplates(businessId, templates).catch(() => false))) templates = await listBusinessTemplates(businessId);
+    if (view === "mine" && !(await localStagingWorkspace()) && (await refreshPendingTemplates(businessId, templates).catch(() => false))) templates = await listBusinessTemplates(businessId);
   } catch (error) {
     if (error instanceof TemplateStoreUnavailableError) return <p className="p-6 text-sm text-muted-foreground">Templates are not available in this environment.</p>;
     throw error;

@@ -73,6 +73,12 @@ async function main() {
   assert.deepEqual(await resolveWhatsAppSetupAccess(secret, adminToken, decodeURIComponent(issuedSetup), "demo-eats"), { ok: false, reason: "admin-requires-handoff" });
   const replay = await connect(`${handoffPath.pathname}${handoffPath.search}`);
   assert.equal(replay.status, 400, "handoff token is single-use");
+  const legacy = new URL((await createWorkspaceHandoff("demo-retail")).path, origin);
+  legacy.searchParams.set("next", "/dashboard/messaging/setup?businessId=demo-retail");
+  const canonical = await connect(`${legacy.pathname}${legacy.search}`);
+  assert.equal(canonical.headers.get("location"), "/business/demo-retail/whatsapp/setup");
+  assert.ok(cookieValue(canonical, whatsappSetupSessionCookieName));
+  assert.equal(cookieValue(canonical, dashboardSessionCookieName), null, "legacy setup preserves setup-only access");
   const mismatch = new URL((await createWorkspaceHandoff("demo-retail")).path, origin);
   mismatch.searchParams.set("next", "/business/demo-eats/whatsapp/setup");
   assert.equal((await connect(`${mismatch.pathname}${mismatch.search}`)).status, 403, "handoff for Demo Retail cannot open another business's setup");
@@ -124,7 +130,7 @@ async function main() {
     const devRequest = (token) => new NextRequest("http://localhost:3000/business/demo-retail/whatsapp/setup", { headers: { cookie: token ? `tany-dashboard-dev=${token}` : "" } });
     assert.equal(cookieValue(await proxy(devRequest(retailToken)), "tany-dashboard-dev"), null, "valid business session is not replaced");
     assert.equal(cookieValue(await proxy(devRequest(adminToken)), "tany-dashboard-dev"), null);
-    assert.ok(cookieValue(await proxy(devRequest("")), "tany-dashboard-dev"), "missing session still gets the local convenience credential");
+    assert.equal(cookieValue(await proxy(devRequest("")), "tany-dashboard-dev"), null, "demo setup does not bootstrap a session");
   } finally {
     if (previousMode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousMode;
   }
@@ -134,15 +140,16 @@ async function main() {
   const previousStaging = Object.fromEntries(stagingKeys.map((key) => [key, process.env[key]]));
   try {
     const { proxy } = h.load("proxy.ts");
-    const visit = (path, cookie = "") => proxy(new NextRequest(`${origin}${path}`, { headers: { cookie } }));
+    const stagingOrigin = "https://tany-whatsapp.tany-8b9.workers.dev";
+    const visit = (path, cookie = "") => proxy(new NextRequest(`${stagingOrigin}${path}`, { headers: { cookie } }));
     const location = (response) => response.headers.get("location");
     const testRetailToken = await signIntegrationAccess(secret, { kind: "business", businessId: "test-retail" }, Date.now(), "tany-dashboard-v1", 3600);
     const testRetailSetup = await signWhatsAppSetupSession(secret, "test-retail");
-    Object.assign(process.env, { MESSAGING_DATABASE: "postgres", MESSAGING_POSTGRES_TARGET: "staging", DATABASE_URL: "postgresql://u:p@ep-staging.example.neon.tech/neondb" });
+    Object.assign(process.env, { MESSAGING_DATABASE: "postgres", MESSAGING_POSTGRES_TARGET: "staging", DATABASE_URL: "postgresql://ep-shiny-boat-bifvzzhe.c-5.ap-southeast-1.aws.neon.tech/neondb" });
     for (const [product, businessId] of [["retail", "test-retail"], ["eats", "test-eats"], ["motos", "test-motos"]]) {
       const response = await visit(`/business/${businessId}/whatsapp/setup`);
       assert.equal(response.status, 307);
-      assert.equal(location(response), `${origin}/${product}`, `${businessId} without a session goes through its entry link`);
+      assert.equal(location(response), `${stagingOrigin}/${product}`, `${businessId} without a session goes through its entry link`);
     }
     assert.equal(location(await visit("/business/test-retail/whatsapp/setup?entry=1")), null, "entry marker never loops back");
     assert.equal(location(await visit("/business/demo-retail/whatsapp/setup")), null, "non-test businesses are never redirected");
@@ -150,6 +157,10 @@ async function main() {
     assert.equal(location(await visit("/business/test-eats/whatsapp/setup", `${dashboardSessionCookieName}=${testRetailToken}`)), null, "another tenant's session is still rejected by the page");
     assert.equal(location(await visit("/business/test-retail/whatsapp/setup", `${dashboardSessionCookieName}=${adminToken}`)), null, "Super Admin is never given a business session");
     assert.equal(location(await visit("/business/test-retail/whatsapp/setup", `${whatsappSetupSessionCookieName}=${testRetailSetup}`)), null);
+    const setupRequest = await visit("/business/test-retail/whatsapp/setup", `${whatsappSetupSessionCookieName}=${testRetailSetup}`);
+    assert.equal(setupRequest.headers.get("x-middleware-request-x-tany-business-setup-route"), "test-retail");
+    const spoofed = await proxy(new NextRequest(`${stagingOrigin}/business/test-retail`, { headers: { "x-tany-business-setup-route": "test-retail" } }));
+    assert.equal(spoofed.headers.get("x-middleware-request-x-tany-business-setup-route"), null);
     process.env.MESSAGING_POSTGRES_TARGET = "production";
     assert.equal(location(await visit("/business/test-retail/whatsapp/setup")), null, "non-staging target never redirects");
     Object.assign(process.env, { MESSAGING_POSTGRES_TARGET: "staging", DATABASE_URL: "postgresql://u:p@prod-db.example.com/neondb" });
@@ -192,7 +203,8 @@ async function main() {
   const page = fs.readFileSync("app/business/[businessId]/whatsapp/setup/page.tsx", "utf8");
   assert.match(page, /resolveWhatsAppSetupAccess\(/);
   assert.match(page, /access\.reason === "admin-requires-handoff"\) redirect\(dashboardHref\)/);
-  assert.match(page, /<WhatsAppConnection initialConnection=\{clientConnection\} embeddedSignup=\{embeddedSignupClientConfiguration\(\)\} dashboardHref=\{dashboardHref\} businessId=\{businessId\} connectLabel=\{/);
+  assert.match(page, /<WhatsAppConnection initialConnection=\{clientConnection\} embeddedSignup=\{local \? null : embeddedSignupClientConfiguration\(\)\}/);
+  assert.match(page, /stagingHref=\{local \? .*\/whatsapp\/setup/);
   const connectComponent = fs.readFileSync("app/dashboard/messaging/_components/whatsapp-connection.tsx", "utf8");
   assert.match(connectComponent, /disabled=\{busy\} onClick=\{launchEmbeddedSignup\}/, "loading Meta does not silently disable the Connect action");
   assert.match(connectComponent, /Meta is still loading\. Please try again in a moment\./, "early click reports the Meta loading state");

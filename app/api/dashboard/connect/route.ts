@@ -5,6 +5,7 @@ import { EntitlementError } from "@/lib/subscriptions/entitlements";
 import { dashboardSessionCookieName, dashboardSessionCookieOptions } from "@/lib/admin/dashboard-cookie";
 import { signWhatsAppSetupSession, whatsappSetupSessionCookieName, whatsappSetupSessionCookieOptions } from "@/lib/admin/whatsapp-setup-session";
 import { businessSetupRouteBusinessId, businessWhatsAppSetupPath } from "@/lib/admin/whatsapp-setup-access";
+import { businessWorkspacePath } from "@/lib/admin/workspace-path";
 
 function requestedSetupBusinessId(value: string | null, origin: string) {
   if (!value) return null;
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: "This setup link does not match the selected business." }, { status: 403, headers });
     if (setupBusinessId && scope.kind === "business" && scope.businessId === setupBusinessId) {
       const setupCredential = await signWhatsAppSetupSession(secret, setupBusinessId);
-      const location = `/dashboard/messaging/setup?businessId=${encodeURIComponent(setupBusinessId)}`;
+      const location = businessWhatsAppSetupPath(setupBusinessId);
       const response = new NextResponse(null, { status: 303, headers: { ...headers, Location: location } });
       // Keep any Super Admin dashboard session intact. This cookie grants only
       // short-lived access to the selected business's WhatsApp setup flow.
@@ -47,8 +48,9 @@ export async function GET(request: NextRequest) {
     }
     const credential = await signIntegrationAccess(secret, scope, Date.now(), "tany-dashboard-v1", 3600);
     // A relative Location retains the user's public service origin behind Cloud Run.
-    const safeBusinessNext = requestedNext === "/dashboard/messaging/setup" ? requestedNext : null;
-    const location = scope.kind === "directory" ? "/admin" : safeBusinessNext ?? `/business/${encodeURIComponent(scope.businessId)}`;
+    const location = scope.kind === "directory" ? "/admin"
+      : requestedNext === "/dashboard/messaging/setup" ? businessWhatsAppSetupPath(scope.businessId)
+      : businessWorkspacePath(scope.businessId);
     const response = new NextResponse(null, { status: 303, headers: { ...headers, Location: location } });
     response.cookies.set(dashboardSessionCookieName, credential, dashboardSessionCookieOptions);
     return response;

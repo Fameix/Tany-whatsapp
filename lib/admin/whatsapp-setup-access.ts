@@ -1,5 +1,6 @@
 import { resolveDashboardSession } from "@/lib/admin/dashboard-access";
 import { verifyWhatsAppSetupSession } from "@/lib/admin/whatsapp-setup-session";
+import { businessWorkspacePath } from "./workspace-path";
 
 export type WhatsAppSetupAccess =
   | { ok: true; via: "business-session" | "setup-session" }
@@ -23,8 +24,9 @@ export async function resolveWhatsAppSetupAccess(
   return { ok: false, reason: "unauthenticated" };
 }
 
-export const businessWhatsAppSetupPath = (businessId: string) => `/business/${encodeURIComponent(businessId)}/whatsapp/setup`;
-export const businessWhatsAppDashboardPath = (businessId: string) => `/business/${encodeURIComponent(businessId)}/whatsapp`;
+export const businessWhatsAppSetupPath = (businessId: string) => `${businessWorkspacePath(businessId)}/whatsapp/setup`;
+export const businessWhatsAppDashboardPath = (businessId: string) => `${businessWorkspacePath(businessId)}/whatsapp`;
+export const businessSetupRouteHeader = "x-tany-business-setup-route";
 
 /** Parses a handoff `next` value that targets the business-scoped setup route. */
 export function businessSetupRouteBusinessId(value: string | null, origin: string) {

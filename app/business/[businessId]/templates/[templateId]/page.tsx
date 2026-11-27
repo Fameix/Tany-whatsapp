@@ -6,6 +6,7 @@ import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access
 import { canViewBusiness } from "@/app/business/_components/business-access";
 import { loadBusiness } from "@/app/business/_components/load-business";
 import { TemplateEditor } from "@/app/business/_components/templates/template-editor";
+import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { getPostgresBusinessAccount } from "@/lib/admin/postgres-directory";
 import { emptyTemplate } from "@/lib/templates/model";
 import { getBusinessTemplate } from "@/lib/templates/repository";
@@ -29,7 +30,8 @@ async function Editor({ params }: Props) {
       content: { name: stored.name, category: stored.category, language: stored.language, header: stored.header, body: stored.body, footer: stored.footer, buttons: stored.buttons, examples: stored.examples },
     }
     : { id: null, status: "draft" as const, metaTemplateId: null, rejectionReason: null, storedCategory: "utility", content: emptyTemplate() };
-  return <TemplateEditor key={template.id ?? "new"} businessId={businessId} root={root} template={template} connected={account?.status === "Connected"} />;
+  return <TemplateEditor key={template.id ?? "new"} businessId={businessId} root={root} template={template}
+    connected={account?.status === "Connected"} localStaging={await localStagingWorkspace()} />;
 }
 
 export default function Page(props: Props) {

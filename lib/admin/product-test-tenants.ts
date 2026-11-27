@@ -18,14 +18,3 @@ export function productTestEntryPath(businessId: string) {
   const product = (Object.keys(productTestTenants) as ProductTestProduct[]).find(key => productTestTenants[key].businessId === businessId);
   return product ? `/${product}` : null;
 }
-
-/** Product test entry is available only against an explicit, non-production staging Postgres. */
-export function productTestStagingMode() {
-  const mode = process.env.MESSAGING_DATABASE;
-  try {
-    const url = new URL(process.env.DATABASE_URL ?? "");
-    return process.env.MESSAGING_POSTGRES_TARGET === "staging" &&
-      (mode === "postgres" || mode === "dual-write") &&
-      !/prod|production|live/i.test(`${url.hostname}${url.pathname}`);
-  } catch { return false; }
-}

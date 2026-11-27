@@ -5,7 +5,8 @@ import { resolveDashboardSession } from "@/lib/admin/dashboard-access";
 import { dashboardSessionCookieName, dashboardSessionCookieOptions } from "@/lib/admin/dashboard-cookie";
 import { signWhatsAppSetupSession, whatsappSetupSessionCookieName, whatsappSetupSessionCookieOptions } from "@/lib/admin/whatsapp-setup-session";
 import { signIntegrationAccess } from "@/lib/integration/access";
-import { isProductTestBusiness, productTestEntryMarker, productTestStagingMode, productTestTenants, type ProductTestProduct } from "@/lib/admin/product-test-tenants";
+import { isProductTestBusiness, productTestEntryMarker, productTestTenants, type ProductTestProduct } from "@/lib/admin/product-test-tenants";
+import { canIncludeStagingTestData } from "@/lib/admin/staging-environment";
 import { getClientWhatsAppConnection } from "@/lib/whatsapp/client-connection";
 import { businessWhatsAppDashboardPath, businessWhatsAppSetupPath } from "@/lib/admin/whatsapp-setup-access";
 
@@ -14,7 +15,7 @@ export { isProductTestBusiness, productTestTenants, type ProductTestProduct } fr
 /** Public entry points intentionally grant access only to one fixed staging tenant. */
 export async function productTestEntryResponse(request: NextRequest, product: ProductTestProduct) {
   const headers = { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow" };
-  if (!productTestStagingMode()) return NextResponse.json({ message: "Product test workspaces are unavailable." }, { status: 404, headers });
+  if (!canIncludeStagingTestData(request.nextUrl.hostname)) return NextResponse.json({ message: "Product test workspaces are unavailable." }, { status: 404, headers });
   const secret = process.env.MESSAGING_SERVICE_SECRET ?? "";
   if (secret.length < 32) return NextResponse.json({ message: "Product test workspaces are not configured." }, { status: 503, headers });
 
