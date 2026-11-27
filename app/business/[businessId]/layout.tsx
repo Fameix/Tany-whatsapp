@@ -14,7 +14,8 @@ import { LocalWhatsAppNotice } from "@/app/business/_components/local-whatsapp-n
 import { WorkspaceRootProvider } from "@/app/business/_components/workspace-root-context";
 import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import { isSuperAdmin } from "@/lib/admin/super-admin-session";
-import { isWorkspaceAlias, workspaceRoot } from "@/lib/admin/workspace-root";
+import { isWorkspaceAlias, workspaceDisplayName, workspaceRoot } from "@/lib/admin/workspace-root";
+import { BrandLogo } from "@/components/brand-logo";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
@@ -25,7 +26,9 @@ import {
 } from "@/lib/admin/dashboard-session";
 import "@/app/admin/admin.css";
 
-export const metadata: Metadata = { title: "Tany WhatsApp Operations" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await isWorkspaceAlias()) ? "Tany Retail Admin" : "Tany WhatsApp Operations" };
+}
 
 function workspaceLog(marker: string, details: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") console.info(marker, details);
@@ -67,7 +70,7 @@ async function WorkspaceLayout({
     vertical: business.vertical,
     active: business.active,
   });
-  const shellBusiness = { ...business, settings: {}, whatsappPhoneNumberId: "" };
+  const shellBusiness = { ...business, name: await workspaceDisplayName(business), settings: {}, whatsappPhoneNumberId: "" };
   const localStaging = await localStagingWorkspace();
   const root = await workspaceRoot(businessId);
   workspaceLog("[WORKSPACE_SWITCHER_START]", { businessId });
@@ -78,9 +81,18 @@ async function WorkspaceLayout({
       business={shellBusiness}
       businessProduct={product}
       workspaceRoot={root}
-      workspaceSwitcher={<>
+      workspaceSwitcher={alias ? (
+        // Super Admin → Tany Retail is the product's own workspace: no business switcher, no back link.
+        <div className="flex min-h-11 w-full items-center gap-3 px-2 py-2">
+          <BrandLogo vertical={business.vertical} decorative />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-medium">{shellBusiness.name}</span>
+            <span className="block truncate text-[11px] text-muted-foreground">Super Admin</span>
+          </span>
+        </div>
+      ) : <>
         <WorkspaceMenu business={shellBusiness} product={product} products={products} />
-        {access === "admin" && <Link href={alias ? "/admin/products" : adminProductPath(product ?? business.vertical)} className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted">{alias ? "Back to Super Admin" : "Back to product admin"}</Link>}
+        {access === "admin" && <Link href={adminProductPath(product ?? business.vertical)} className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted">Back to product admin</Link>}
       </>}
     >
       <WorkspaceRootProvider businessId={businessId} root={root}>

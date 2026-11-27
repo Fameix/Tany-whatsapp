@@ -58,6 +58,10 @@ async function main() {
   const layout = fs.readFileSync("app/business/[businessId]/layout.tsx", "utf8");
   assert.match(layout, /if \(alias && !\(await isSuperAdmin\(\)\)\) return <SuperAdminSignInRequired \/>;/, "the alias layout re-checks Super Admin");
   assert.match(layout, /<WorkspaceRootProvider businessId=\{businessId\} root=\{root\}>/);
+  assert.doesNotMatch(layout, /Back to Super Admin/, "Tany Retail is the product's own workspace: no back link");
+  assert.match(layout, /name: await workspaceDisplayName\(business\)/, "the shell shows the product name, not the staging business");
+  assert.match(fs.readFileSync("lib/admin/workspace-root.ts", "utf8"), /\(await isWorkspaceAlias\(\)\) \? verticalConfig\[business\.vertical\]\.label : business\.name/);
+  assert.doesNotMatch(fs.readFileSync("app/business/_components/retail-admin-links.tsx", "utf8"), /href: "\/admin"/, "Settings has no back-to-Super-Admin row");
   assert.match(fs.readFileSync("app/business/_components/business-access.ts", "utf8"), /if \(\(await isWorkspaceAlias\(\)\) && !\(await isSuperAdmin\(\)\)\) return false;/, "pages re-check Super Admin too");
   const shell = fs.readFileSync("app/admin/components/admin-shell.tsx", "utf8");
   assert.doesNotMatch(shell, /retail-whatsapp-route|workspacePathFor/, "no per-page alias hacks remain");

@@ -16,7 +16,7 @@ import { listCatalog } from "@/lib/admin/services";
 import { CatalogPanel } from "@/app/admin/components/catalog-panel";
 import { workspaceProductContext } from "@/app/business/_components/workspace-product-context";
 import { matchesWorkspaceModule, workspaceProductModules } from "@/lib/admin/workspace-products";
-import { isWorkspaceAlias, workspaceRoot } from "@/lib/admin/workspace-root";
+import { isWorkspaceAlias, workspaceDisplayName, workspaceRoot } from "@/lib/admin/workspace-root";
 import { RetailAdminLinks } from "@/app/business/_components/retail-admin-links";
 import { LoadingPanel } from "@/app/admin/components/shared";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
@@ -45,7 +45,9 @@ async function Section({ params, searchParams }: SectionProps) {
     </>);
   }
   if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;
-  const { business, product } = await workspaceProductContext(businessId);
+  const context = await workspaceProductContext(businessId);
+  const { product } = context;
+  const business = { ...context.business, name: await workspaceDisplayName(context.business) };
   const tool = workspaceProductModules(product).find(item => item.section === section);
   if (!tool) {
     // Preserve the legacy admin catalog and record URLs. Client modules are granted above.
