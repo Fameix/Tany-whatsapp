@@ -5,12 +5,17 @@ import type { AdminBusiness, BusinessListItem } from "@/lib/admin/types";
 import type { OperationAccount } from "@/lib/admin/operations-types";
 import type { TanyVertical } from "@/lib/messaging/types";
 import { verticalConfig } from "@/lib/messaging/vertical-config";
+import { postgresWhatsAppStatus } from "./postgres-whatsapp-status";
+import { classifyTenant, type TenantKind } from "./tenant-classification";
 
 type Row = Record<string, unknown>;
 const rows = async (query: ReturnType<ReturnType<typeof postgresDb>["execute"]>) => (await query as unknown as { rows?: Row[] }).rows ?? [];
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const integer = (value: unknown) => typeof value === "number" ? value : Number.parseInt(text(value), 10) || 0;
-const iso = (value: unknown) => value instanceof Date && Number.isFinite(value.getTime()) ? value.toISOString() : null;
+const iso = (value: unknown) => {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+};
 
 export class PostgresDirectoryError extends Error {
   readonly code = "POSTGRES_DIRECTORY_UNAVAILABLE";
@@ -28,9 +33,7 @@ function profile(row: Row): AdminBusiness | null {
   return { id, name: text(row.name), vertical: key, active: text(row.status) === "active", whatsappPhoneNumberId: text(row.phone_number_id), settings: {} };
 }
 function account(row: Row, business: AdminBusiness): OperationAccount {
-  const configured = !!text(row.phone_number_id);
-  const verified = row.test_passed === true && text(row.validation_mode) === "live" && !!row.tested_at;
-  const status = !business.active ? "Inactive" : configured && text(row.account_status) === "connected" && verified ? "Connected" : configured && text(row.account_status) === "disconnected" ? "Disconnected" : configured && text(row.account_status) === "error" ? "Error" : configured ? "Configured · unverified" : "Not connected";
+  const status = text(row.connection_status) || "Not connected";
   return { accountId: text(row.account_id) || null, businessId: business.id, business: business.name, vertical: business.vertical, phone: text(row.display_phone) || null, displayName: text(row.display_name) || business.name, phoneNumberId: text(row.phone_number_id) || null, wabaId: text(row.waba_id) || null, metadataStatus: text(row.account_status) || undefined, status, quality: "Unknown", subscription: "Unknown", at: iso(row.account_updated_at) };
 }
 
@@ -40,6 +43,7 @@ async function directoryRows(businessId?: string): Promise<Row[]> {
       select b.legacy_business_id, b.name, b.vertical, b.status,
         a.id as account_id, a.phone_number_id, a.waba_id, a.display_phone, a.display_name,
         a.status as account_status, a.test_passed, a.validation_mode, a.tested_at, a.updated_at as account_updated_at,
+        ${postgresWhatsAppStatus} as connection_status,
         coalesce(c.conversation_count, 0) as conversation_count,
         coalesce(m.message_count, 0) as message_count,
         coalesce(t.template_count, 0) as template_count
@@ -63,16 +67,18 @@ export async function listPostgresBusinessProfiles(): Promise<AdminBusiness[]> {
 }
 
 /** Standalone tenant identity lookup for an already-authorized workspace route. */
-export async function getPostgresBusinessProfile(businessId: string): Promise<AdminBusiness | null> {
+export async function getPostgresBusinessProfile(businessId: string): Promise<(AdminBusiness & { tenantKind: TenantKind }) | null> {
   try {
     const result = await rows(postgresDb().execute(sql`
-      select b.legacy_business_id, b.name, b.vertical, b.status, a.phone_number_id
+      select b.legacy_business_id, b.name, b.vertical, b.status, b.settings, a.phone_number_id
       from messaging_businesses b
       left join whatsapp_accounts a on a.messaging_business_id = b.id
       where b.legacy_business_id = ${businessId}
       limit 1
     `));
-    return result[0] ? profile(result[0]) : null;
+    const row = result[0];
+    const business = row ? profile(row) : null;
+    return business ? { ...business, tenantKind: classifyTenant({ id: business.id, settings: row.settings }) } : null;
   } catch (error) {
     console.error("[POSTGRES_BUSINESS_PROFILE_READ_FAILED]", { code: error instanceof Error ? error.name : "UNKNOWN" });
     throw new PostgresDirectoryError();

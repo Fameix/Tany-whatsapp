@@ -18,4 +18,8 @@ export function classifyTenant(business: { id: string; settings?: unknown }): Te
   return "live";
 }
 
+export function hasFixtureWorkspaceId(id: string) {
+  return /^(?:test|demo|phase\d+)(?:-|$)/i.test(id);
+}
+
 export const tenantKindLabel: Record<TenantKind, string> = { live: "Live", test: "Test", demo: "Demo", migration: "Migration fixture" };

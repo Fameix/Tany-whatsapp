@@ -1,9 +1,11 @@
 import "server-only";
-import { sql, type SQL } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { postgresDb } from "@/lib/data/postgres-client";
 import { activeTanyVerticals, type ActiveTanyVertical } from "@/lib/messaging/vertical-config";
-import { classifyTenant } from "./tenant-classification";
+import { listProductTenants, type ProductReader } from "./product-scope";
+import { postgresWhatsAppStatus } from "./postgres-whatsapp-status";
 import { startOfTodayIst } from "./product-center";
+import type { ProductBusiness } from "./product-center";
 
 const dayMs = 86_400_000;
 
@@ -14,6 +16,7 @@ export type OverviewMetrics = {
   sent: number;
   automations: number;
   campaigns: number;
+  customers: number;
 };
 
 export type OverviewDay = {
@@ -40,35 +43,37 @@ export type OperationalOverview = {
   health: MessagingHealth;
   attention: { id: string; name: string; disconnected: boolean; setup: boolean; failures: number; webhookFailures: number }[];
   activity: { id: string; name: string; event: string; at: string }[];
+  directory: Pick<ProductBusiness, "id" | "name" | "product" | "kind" | "active" | "whatsapp" | "createdAt" | "lastActivity">[];
+  productActivity: { recorded: number; completed: number } | null;
 };
 
-const zero = (): OverviewMetrics => ({ businesses: 0, connected: 0, conversations: 0, sent: 0, automations: 0, campaigns: 0 });
+const zero = (): OverviewMetrics => ({ businesses: 0, connected: 0, conversations: 0, sent: 0, automations: 0, campaigns: 0, customers: 0 });
 
-type OverviewReader = {
-  execute<T extends Record<string, unknown>>(query: SQL): PromiseLike<{ rows: T[] }>;
-};
-
-export async function getOperationalOverview(product: ActiveTanyVertical | null, now = Date.now(), db: OverviewReader = postgresDb()): Promise<OperationalOverview> {
+export async function getOperationalOverview(product: ActiveTanyVertical | null, {
+  now = Date.now(), db = postgresDb(), includeTestData = false,
+}: { now?: number; db?: ProductReader; includeTestData?: boolean } = {}): Promise<OperationalOverview> {
   const today = startOfTodayIst(now);
   const week = new Date(today.getTime() - 6 * dayMs);
   const end = new Date(now);
   const columns = product ? [product] : activeTanyVerticals;
   const productFilter = sql.join(columns.map(value => sql`${value}`), sql`, `);
-  const tenants = await db.execute<{ id: string; legacy_business_id: string; settings: unknown }>(sql`
-    select id, legacy_business_id, settings
-    from messaging_businesses
-    where vertical in (${productFilter})
-  `);
-  const ids = tenants.rows
-    .filter(row => classifyTenant({ id: row.legacy_business_id, settings: row.settings }) === "live")
-    .map(row => row.id);
+  const tenants = (await listProductTenants(columns, db, product !== null && includeTestData)).map(({ id, kind }) => ({ id, kind }));
+  const productActivity = product ? sql`(
+    select jsonb_build_object('recorded', count(*), 'completed', count(*) filter (
+      where r.data->>'status' = ${product === "motos" ? "completed" : "delivered"}
+    ))
+    from messaging_runtime_records r join scope b on b.id = r.messaging_business_id
+    where ${product === "motos"
+      ? sql`r.collection = 'bookings' and r.data->>'serviceId' = 'test_drive'`
+      : sql`r.collection = 'orders'`}
+  )` : sql`null`;
   const payload = await db.execute<{ overview: Omit<OperationalOverview, "metrics" | "breakdown"> & {
     breakdown: Partial<Record<ActiveTanyVertical, OverviewMetrics>>;
   } }>(sql`
     with scope as (
-      select b.id, b.legacy_business_id, b.name, b.vertical, b.status
+      select b.id, b.legacy_business_id, b.name, b.vertical, b.status, b.created_at, tenant.kind
       from messaging_businesses b
-      join jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb) tenant(id) on b.id = tenant.id::uuid
+      join jsonb_to_recordset(${JSON.stringify(tenants)}::jsonb) tenant(id uuid, kind text) on b.id = tenant.id
       where b.vertical in (${productFilter})
     ), native_messages as (
       select m.messaging_business_id as tenant, m.meta_message_id as message_id, m.direction,
@@ -129,22 +134,24 @@ export async function getOperationalOverview(product: ActiveTanyVertical | null,
       where touch.at between ${week} and ${end}
     ), business_metrics as (
       select b.*,
-        coalesce(a.status = 'connected' and nullif(a.phone_number_id, '') is not null
-          and a.test_passed and a.validation_mode = 'live' and a.tested_at is not null, false) as connected,
-        coalesce(a.status in ('disconnected', 'error'), false) as disconnected,
+        (wa.status = 'Connected') as connected,
+        (wa.status in ('Disconnected', 'Error')) as disconnected,
+        (wa.status = 'Configured · unverified') as configured,
         (select count(*)::int from activity_days d where d.tenant = b.id and d.day = (${today}::timestamptz at time zone 'Asia/Kolkata')::date) as conversations,
         (select count(*)::int from delivery d where d.tenant = b.id and d.at >= ${today} and d.outcome in ('sent', 'delivered', 'read')) as sent,
         (select count(*)::int from automation_definitions au where au.messaging_business_id = b.id and au.product = b.vertical and au.status = 'active') as automations,
         (select count(*)::int from messaging_runtime_records r where r.messaging_business_id = b.id and r.collection = 'campaigns' and r.data->>'status' in ('running', 'sending')) as campaigns,
+        ${product ? sql`(select count(*)::int from whatsapp_contacts c where c.messaging_business_id = b.id)` : sql`0`} as customers,
         (select count(*)::int from delivery d where d.tenant = b.id and d.at >= ${today} and d.outcome = 'failed') as failures,
         (select count(*)::int from whatsapp_webhook_events w where w.messaging_business_id = b.id and w.processing_status = 'failed' and w.received_at >= ${today} and w.received_at <= ${end}) as webhook_failures
       from scope b left join whatsapp_accounts a on a.messaging_business_id = b.id
+      cross join lateral (select ${postgresWhatsAppStatus} as status) wa
     ), product_metrics as (
       select vertical,
         jsonb_build_object('businesses', count(*) filter (where status = 'active'),
           'connected', count(*) filter (where connected and status = 'active'),
           'conversations', sum(conversations), 'sent', sum(sent),
-          'automations', sum(automations), 'campaigns', sum(campaigns)) as metrics
+          'automations', sum(automations), 'campaigns', sum(campaigns), 'customers', sum(customers)) as metrics
       from business_metrics group by vertical
     ), timeline as (
       select b.legacy_business_id as id, b.name, a.activated_at as at, 'WhatsApp connected' as event
@@ -205,7 +212,15 @@ export async function getOperationalOverview(product: ActiveTanyVertical | null,
       'health', (select to_jsonb(health) from health),
       'attention', coalesce((select jsonb_agg(to_jsonb(attention) order by failures + "webhookFailures" desc, disconnected desc, name, id) from attention), '[]'),
       'activity', coalesce((select jsonb_agg(to_jsonb(recent) order by at desc, id, event)
-        from (select * from timeline order by at desc, id, event limit 8) recent), '[]')
+        from (select * from timeline order by at desc, id, event limit 8) recent), '[]'),
+      'directory', ${product ? sql`coalesce((select jsonb_agg(jsonb_build_object(
+        'id', b.legacy_business_id, 'name', b.name, 'product', b.vertical, 'kind', b.kind,
+        'active', b.status = 'active', 'createdAt', b.created_at,
+        'whatsapp', case when b.connected then 'connected' when b.disconnected then 'disconnected'
+          when b.configured then 'setup' else 'not_connected' end,
+        'lastActivity', (select max(m.at) from messages m where m.tenant = b.id)
+      ) order by b.name, b.legacy_business_id) from business_metrics b), '[]')` : sql`'[]'::jsonb`},
+      'productActivity', ${productActivity}
     ) as overview
   `);
   const data = payload.rows[0].overview;

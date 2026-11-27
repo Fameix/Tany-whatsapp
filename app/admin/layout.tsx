@@ -1,9 +1,9 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { WorkspaceSwitcher } from "./components/workspace-switcher";
-import { WorkspaceSwitcherLoading } from "./components/workspace-menu";
+import { AdminProductMenu, AdminProductMenuLoading } from "./components/control-center/product-selector";
 import type { Metadata } from "next";
 import { AdminShell } from "./components/admin-shell";
+import { LoadingPanel } from "./components/shared";
 import { DashboardAccessRequired } from "./components/dashboard-access-required";
 import {
   DashboardAuthorizationError,
@@ -11,7 +11,7 @@ import {
 } from "@/lib/admin/dashboard-session";
 import "./admin.css";
 export const metadata: Metadata = {
-  title: "Tany Products",
+  title: "Tany Super Admin",
   description: "Tany product workspaces",
 };
 
@@ -33,14 +33,16 @@ export default async function AdminLayout({
     throw error;
   }
   return (
-    <AdminShell
-      workspaceSwitcher={
-        <Suspense fallback={<WorkspaceSwitcherLoading />}>
-          <WorkspaceSwitcher />
-        </Suspense>
-      }
-    >
-      {children}
-    </AdminShell>
+    <Suspense fallback={<LoadingPanel />}>
+      <AdminShell
+        workspaceSwitcher={
+          <Suspense fallback={<AdminProductMenuLoading />}>
+            <AdminProductMenu />
+          </Suspense>
+        }
+      >
+        {children}
+      </AdminShell>
+    </Suspense>
   );
 }

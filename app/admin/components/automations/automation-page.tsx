@@ -4,6 +4,7 @@ import { EntitlementError } from "@/lib/subscriptions/entitlements";
 import { AutomationBuilder } from "./automation-builder";
 import { refreshPendingTemplates } from "@/lib/templates/meta-templates";
 import { listBusinessTemplates } from "@/lib/templates/repository";
+import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 
 /** Same best-effort refresh the Templates page uses, so a template Meta has just approved
  * is selectable here without a visit to Templates. Failures leave the stored status. */
@@ -29,7 +30,7 @@ export async function AutomationPage({ businessId }: { businessId?: string }) {
     if (businessId) {
       if (process.env.NODE_ENV === "development")
         console.info("[AUTOMATION_PAGE_DASHBOARD_START]", { businessId });
-      await refreshTemplateStatuses(businessId);
+      if (!(await localStagingWorkspace())) await refreshTemplateStatuses(businessId);
       data = await automationDashboard(businessId);
       if (process.env.NODE_ENV === "development")
         console.info("[AUTOMATION_PAGE_DASHBOARD_DONE]", { businessId });

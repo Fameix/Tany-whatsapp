@@ -5,6 +5,7 @@ import { LoadingPanel } from "@/app/admin/components/shared";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
 import { PageHeader, ProductStatus, isSuperAdmin, surface } from "@/app/admin/components/control-center/ui";
 import { tanyProducts } from "@/lib/messaging/vertical-config";
+import { adminProductPath } from "@/lib/admin/product-routes";
 
 async function Products() {
   await connection();
@@ -15,9 +16,7 @@ async function Products() {
       <ul className={`${surface} divide-y divide-border/60 px-4 sm:px-5`}>
         {tanyProducts.map(product => (
           <li key={product.id} className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 py-2 text-sm">
-            {product.status === "live"
-              ? <Link href={`/admin/products/${product.id}`} className="rounded-sm font-medium hover:underline">{product.name}</Link>
-              : <span>{product.name}</span>}
+            <Link href={adminProductPath(product.id)} className="rounded-sm font-medium hover:underline">{product.name}</Link>
             <ProductStatus status={product.status} />
           </li>
         ))}

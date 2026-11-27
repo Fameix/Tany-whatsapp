@@ -9,6 +9,7 @@ import { PostgresDirectoryOverview } from "./postgres-directory-overview";
 import { databaseMode } from "@/lib/data/repository";
 import { BusinessWhatsApp } from "@/app/business/_components/business-whatsapp";
 import { WhatsAppDiagnostics, WhatsAppProfileLink } from "@/app/business/_components/whatsapp-diagnostics";
+import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 
 export async function OperationsPage({
   businessId,
@@ -35,6 +36,7 @@ export async function OperationsPage({
         key={`${businessId ?? "admin"}/${section}`}
         data={{ ...(await getOperationsData(businessId)), audience: "admin" }}
         section={section}
+        localStaging={await localStagingWorkspace()}
         initialConversationId={conversationId}
       />
       {section === "settings" && businessId && (

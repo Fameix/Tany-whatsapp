@@ -11,6 +11,8 @@ import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repos
 import { randomUUID } from "node:crypto";
 import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
 import type { AdminBusiness } from "@/lib/admin/types";
+import { listProductProfiles } from "./product-scope";
+import { verticalConfig, type ActiveTanyVertical } from "@/lib/messaging/vertical-config";
 import type {
   AutomationRule,
   OperationRecord,
@@ -376,12 +378,21 @@ export async function getOperationsData(
   businessId?: string,
 ): Promise<OperationsData> {
   if (businessId) return businessOperations(await requireBusiness(businessId), true);
-  const profiles = await listBusinessProfiles();
+  return aggregateOperations(await listBusinessProfiles(), "All WhatsApp workspaces");
+}
+
+/** The product is applied before any per-business operation reads. */
+export async function getProductOperationsData(product: ActiveTanyVertical, includeTestData = false): Promise<OperationsData> {
+  if (!postgresRuntimeMode()) throw new Error("Product operations are unavailable.");
+  return aggregateOperations(await listProductProfiles(product, includeTestData), verticalConfig[product].label);
+}
+
+async function aggregateOperations(profiles: AdminBusiness[], businessName: string): Promise<OperationsData> {
   const data = await Promise.all(profiles.map(business => businessOperations(business, true)));
   return {
     businessId: null,
     setupRequests: data.flatMap(d => d.setupRequests ?? []),
-    businessName: "All WhatsApp workspaces",
+    businessName,
     messages: data.flatMap((d) => d.messages),
     conversations: data
       .flatMap((d) => d.conversations)

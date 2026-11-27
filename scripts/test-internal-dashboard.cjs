@@ -19,10 +19,21 @@ function main() {
     /const principal = \{ role: "admin" as const \}/,
   );
 
-  const switcher = source("app/admin/components/workspace-switcher.tsx");
-  assert.match(switcher, /listBusinessProfiles/);
-  assert.match(switcher, /isActiveTanyVertical\(profile\.vertical\)/);
-  assert.doesNotMatch(switcher, /WorkspaceMenu options=\{\[\]\}/);
+  const switcher = source("app/business/[businessId]/layout.tsx");
+  assert.match(switcher, /requireDashboardAccess\(businessId\)/);
+  assert.match(switcher, /access === "admin"[\s\S]*?<AdminProductMenu\s*\/>/);
+  assert.match(switcher, /active && isActiveTanyVertical\(vertical\)/);
+  assert.match(switcher, /canSeeAdmin=\{false\}/);
+  assert.doesNotMatch(switcher, /listBusinessProfiles/);
+  const adminLayout = source("app/admin/layout.tsx");
+  assert.match(adminLayout, /<AdminProductMenu\s*\/>/);
+  assert.doesNotMatch(adminLayout, /<WorkspaceSwitcher\s*\/>/);
+  const productSelector = source("app/admin/components/control-center/product-selector.tsx");
+  assert.match(productSelector, /tanyProducts\.map/);
+  assert.match(productSelector, /router\.push\(adminProductPath\(id\)\)/);
+  assert.match(productSelector, /adminProductFromPath\(usePathname\(\)\)/);
+  assert.match(productSelector, /Search products/);
+  assert.doesNotMatch(productSelector, /listBusinessProfiles|WorkspaceOption|\/business\//);
 
   const menu = source("app/admin/components/workspace-menu.tsx");
   assert.match(menu, /encodeURIComponent\(option\.id\)/);
@@ -38,10 +49,17 @@ function main() {
 
   const productResolver = source("app/admin/products/[product]/page.tsx");
   assert.match(productResolver, /isSuperAdmin\(\)/);
-  assert.match(productResolver, /listProductBusinesses\(\)\)\.filter\(business => business\.product === product\.id\)/);
-  assert.match(productResolver, /realBusinesses\(all\)/);
+  assert.match(productResolver, /liveProduct \? await getOperationalOverview\(liveProduct, \{ includeTestData \}\) : null/);
+  assert.match(productResolver, /<BusinessTable businesses=\{data\.directory\}/);
   const businessTable = source("app/admin/components/control-center/ui.tsx");
   assert.ok(businessTable.includes("`/business/${encodeURIComponent(business.id)}`"));
+  const productSection = source("app/admin/products/[product]/[section]/page.tsx");
+  assert.match(productSection, /productNavigation\(product\)/);
+  assert.match(productSection, /getProductOperationsData\(product\.id, includeTestData\)/);
+  assert.match(productSection, /listProductProfiles\(product\.id, includeTestData\)/);
+  assert.doesNotMatch(productSection, /getOperationsData\(|listBusinessProfiles/);
+  assert.match(source("lib/admin/operations-service.ts"), /aggregateOperations\(await listProductProfiles\(product, includeTestData\)/);
+  assert.match(source("app/admin/product-test-data-actions.ts"), /await requireDashboardAccess\(\) !== "admin"/);
 
   const workspaceLayout = source("app/business/[businessId]/layout.tsx");
   assert.match(workspaceLayout, /requireDashboardAccess\(businessId\)/);

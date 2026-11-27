@@ -20,9 +20,20 @@ import {
   Boxes,
   Building2,
   FlaskConical,
+  CalendarDays,
+  CarFront,
+  Package,
+  Store,
+  Truck,
+  UserRoundSearch,
+  Utensils,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminBusiness } from "@/lib/admin/types";
+import { adminProductFromPath, adminProductPath } from "@/lib/admin/product-routes";
+import { productNavigation, type ProductSection } from "@/lib/admin/product-navigation";
+import type { TanyProduct } from "@/lib/messaging/vertical-config";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -58,6 +69,20 @@ import {
 } from "@/components/ui/command";
 
 type NavLink = { label: string; href: string; icon: LucideIcon; match?: string[]; nested?: boolean };
+const productIcons: Record<ProductSection, LucideIcon> = {
+  overview: LayoutDashboard, dealers: Building2, leads: UserRoundSearch, vehicles: CarFront,
+  "test-drives": CalendarDays, restaurants: Utensils, orders: Package, delivery: Truck,
+  stores: Store, products: Package, customers: Users, inbox: Inbox, templates: FileText,
+  automations: Workflow, campaigns: Megaphone, whatsapp: MessageCircle, "message-status": CheckCheck,
+  "webhook-health": Activity, settings: Settings,
+};
+function adminGroups(product?: TanyProduct): { label?: string; links: NavLink[] }[] {
+  if (!product) return adminNavigation();
+  return productNavigation(product).map(group => ({
+    label: group.label,
+    links: group.links.map(link => ({ ...link, icon: productIcons[link.section], nested: link.section === "whatsapp" })),
+  }));
+}
 
 /** Business workspaces get a customer-facing hierarchy; technical pages stay reachable
  * from Settings → WhatsApp diagnostics and keep their existing URLs. */
@@ -87,12 +112,12 @@ const businessPageLabels: Record<string, string> = {
 };
 const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname) || (!!link.nested && pathname.startsWith(`${link.href}/`));
 
-function linksFor(business?: AdminBusiness): NavLink[] {
+function linksFor(business?: AdminBusiness, product?: TanyProduct): NavLink[] {
   if (business) {
     const { primary, secondary } = businessNavigation(business);
     return [...primary, ...secondary];
   }
-  return adminNavigation().flatMap((group) => group.links);
+  return adminGroups(product).flatMap((group) => group.links);
 }
 
 /** Super Admin operations and configuration navigation. */
@@ -161,9 +186,11 @@ function Navigation({ links }: { links: NavLink[] }) {
 }
 function WorkspaceSidebar({
   business,
+  product,
   workspaceSwitcher,
 }: {
   business?: AdminBusiness;
+  product?: TanyProduct;
   workspaceSwitcher: React.ReactNode;
 }) {
   const loading = <div className="h-9 animate-pulse rounded-md bg-muted" />;
@@ -187,7 +214,7 @@ function WorkspaceSidebar({
           </>
         ) : (
           <>
-            {adminNavigation().map((group, index) => (
+            {adminGroups(product).map((group, index) => (
               <SidebarGroup key={group.label ?? "main"} className={index ? "px-2" : "px-2 pt-4"}>
                 {group.label && (
                   <SidebarGroupLabel className="px-2 text-[11px]">{group.label}</SidebarGroupLabel>
@@ -205,9 +232,9 @@ function WorkspaceSidebar({
     </Sidebar>
   );
 }
-function Breadcrumb({ business }: { business?: AdminBusiness }) {
+function Breadcrumb({ business, product }: { business?: AdminBusiness; product?: TanyProduct }) {
   const pathname = usePathname();
-  const links = linksFor(business);
+  const links = linksFor(business, product);
   const root = links[0].href;
   const current =
     links.find((entry) => entry.href === pathname)?.label ??
@@ -221,10 +248,10 @@ function Breadcrumb({ business }: { business?: AdminBusiness }) {
       className="flex min-w-0 items-center gap-2 text-xs"
     >
       <Link
-        href={links[0].href}
+        href={product ? adminProductPath(product.id) : root}
         className="truncate text-muted-foreground hover:text-foreground"
       >
-        {business?.name ?? "Super Admin"}
+        {business?.name ?? product?.name ?? "Super Admin"}
       </Link>
       <ChevronRight
         className="size-3 shrink-0 text-muted-foreground"
@@ -247,6 +274,9 @@ export function AdminShell({
 }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  const product = business ? undefined : adminProductFromPath(pathname);
+  const title = business?.name ?? product?.name ?? "Tany Super Admin";
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -261,7 +291,7 @@ export function AdminShell({
     setCommandOpen(false);
     router.push(href);
   };
-  const commands = linksFor(business);
+  const commands = linksFor(business, product);
   return (
     <TooltipProvider delayDuration={250}>
       <SidebarProvider
@@ -276,6 +306,7 @@ export function AdminShell({
         </a>
         <WorkspaceSidebar
           business={business}
+          product={product}
           workspaceSwitcher={workspaceSwitcher}
         />
         <SidebarInset className="min-w-0">
@@ -287,14 +318,15 @@ export function AdminShell({
               <TooltipContent>Toggle sidebar (Ctrl+B)</TooltipContent>
             </Tooltip>
             <Separator orientation="vertical" className="mx-2 h-4!" />
+            {product && <BrandLogo vertical={product.id} decorative className="size-5" />}
             <Suspense
               fallback={
                 <span className="text-xs">
-                  {business?.name ?? "Super Admin"}
+                  {title}
                 </span>
               }
             >
-              <Breadcrumb business={business} />
+              <Breadcrumb business={business} product={product} />
             </Suspense>
             <div className="ml-auto flex items-center gap-3">
               <Button
@@ -314,7 +346,7 @@ export function AdminShell({
                   variant="secondary"
                   className="hidden rounded-md text-[10px] font-normal sm:inline-flex"
                 >
-                  Super Admin
+                  {product ? product.status === "live" ? "Live" : "Coming soon" : "Tany Super Admin"}
                 </Badge>
               )}
             </div>
@@ -331,17 +363,13 @@ export function AdminShell({
           open={commandOpen}
           onOpenChange={setCommandOpen}
           title="Quick navigation"
-          description={
-            business
-              ? `Navigate ${business.name}.`
-              : "Navigate Tany Super Admin."
-          }
+          description={`Navigate ${title}.`}
         >
           <Command>
             <CommandInput placeholder="Find a page..." />
             <CommandList>
               <CommandEmpty>No pages found.</CommandEmpty>
-              <CommandGroup heading={business?.name ?? "Super Admin"}>
+              <CommandGroup heading={title}>
                 {commands.map(({ label, href, icon: Icon }) => (
                   <CommandItem key={href} onSelect={() => navigate(href)}>
                     <Icon />

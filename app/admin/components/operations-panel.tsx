@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AccountMetadataEditor } from "@/app/admin/components/account-metadata-editor";
 import { useRouter } from "next/navigation";
 import { operationsMetrics } from "@/lib/admin/operations-metrics";
+import { LocalWhatsAppNotice } from "@/app/business/_components/local-whatsapp-notice";
 import {
   ArrowUpRight,
   Bot,
@@ -181,9 +182,13 @@ export function OperationsPanel({
   data: initialData,
   section,
   initialConversationId,
+  adminRoot = "/admin",
+  localStaging = false,
 }: {
   data: OperationsData;
   section: OperationSection;
+  adminRoot?: string;
+  localStaging?: boolean;
   /** Opens a specific conversation, e.g. from Home's "Open conversation". */
   initialConversationId?: string;
 }) {
@@ -210,7 +215,7 @@ export function OperationsPanel({
   const [pending, startTransition] = useTransition();
   const root = data.businessId
     ? `/business/${encodeURIComponent(data.businessId)}`
-    : "/admin";
+    : adminRoot;
   useEffect(() => {
     if (!data.businessId) return;
     let cancelled = false;
@@ -439,7 +444,7 @@ export function OperationsPanel({
               : <>{data.businessName} <span aria-hidden="true">·</span>{" "}{section === "overview" ? "Messaging activity at a glance" : "Manage WhatsApp messaging"}</>}
           </p>
         </div>
-        {!data.businessId && (
+        {!data.businessId && adminRoot === "/admin" && (
           <Badge variant="outline" className="gap-1.5">
             <ShieldCheck className="size-3" />
             Super Admin
@@ -684,7 +689,12 @@ export function OperationsPanel({
                         </div>
                       ))}
                   </div>
-                  <div className="space-y-3 border-t p-4">
+                  {localStaging && <div className="border-t p-4">
+                    {data.businessId
+                      ? <p className="text-sm text-muted-foreground">Send live WhatsApp replies from the staging workspace.</p>
+                      : <LocalWhatsAppNotice businessId={selected.businessId} />}
+                  </div>}
+                  <fieldset disabled={localStaging} className="min-w-0 space-y-3 border-t p-4">
                     <Label htmlFor="reply">Reply</Label>
                     <Input
                       id="reply"
@@ -770,7 +780,7 @@ export function OperationsPanel({
                           Location sending is not connected
                         </TooltipContent>
                       </Tooltip>
-                      <Button size="sm" disabled={pending || (!draft.trim() && !templateId) || selected.status !== "handed_off" || parameters.some(p => !p.trim())} onClick={sendReply} className="ml-auto">
+                      <Button size="sm" disabled={localStaging || pending || (!draft.trim() && !templateId) || selected.status !== "handed_off" || parameters.some(p => !p.trim())} onClick={sendReply} className="ml-auto">
                         <Send />
                         {pending ? "Sending..." : "Send"}
                       </Button>
@@ -778,7 +788,7 @@ export function OperationsPanel({
                     <p className="text-xs text-muted-foreground">
                       Hand off to a human to reply. Outside the 24-hour reply window, choose an approved template.
                     </p>
-                  </div>
+                  </fieldset>
                 </>
               ) : (
                 <Empty text="Select a conversation to view its thread." />

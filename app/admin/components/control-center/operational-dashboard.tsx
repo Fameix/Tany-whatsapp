@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Activity, ArrowUpRight, Building2, Megaphone, MessageCircle, Send, Workflow } from "lucide-react";
+import { Activity, ArrowUpRight, Building2, Megaphone, MessageCircle, Send, Users, Workflow } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { verticalConfig } from "@/lib/messaging/vertical-config";
+import { adminProductPath } from "@/lib/admin/product-routes";
 import type { OperationalOverview, OverviewMetrics } from "@/lib/admin/operational-overview";
 import { surface } from "./ui";
 
@@ -15,6 +16,7 @@ const kpis = [
   ["campaigns", "Campaigns running", Megaphone],
 ] as const;
 const breakdownColumns = [kpis[0], kpis[1], kpis[2], kpis[4]] as const;
+const productKpis = [["businesses", "Businesses", Building2], kpis[1], kpis[2], ["customers", "Customers", Users], kpis[3], kpis[4]] as const;
 const number = new Intl.NumberFormat("en-IN");
 const dateFormat = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 const eventFormat = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
@@ -34,10 +36,10 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="mt-4 rounded-lg bg-muted/50 px-3 py-4 text-sm text-muted-foreground">{children}</p>;
 }
 
-function Metrics({ data }: { data: OverviewMetrics }) {
+export function OperationalMetrics({ data, product = false }: { data: OverviewMetrics; product?: boolean }) {
   return (
     <dl aria-label="Key metrics" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
-      {kpis.map(([key, label, Icon]) => (
+      {(product ? productKpis : kpis).map(([key, label, Icon]) => (
         <div key={key} className={`${surface} flex min-w-0 flex-col gap-1.5 px-3 py-3 sm:px-4`}>
           <Icon aria-hidden="true" className="size-4 text-primary" />
           <dt className="text-xs font-medium leading-4 text-muted-foreground">{label}</dt>
@@ -48,17 +50,17 @@ function Metrics({ data }: { data: OverviewMetrics }) {
   );
 }
 
-function Conversations({ days }: { days: OperationalOverview["days"] }) {
+export function MessagingActivity({ days, title = "Conversations activity" }: { days: OperationalOverview["days"]; title?: string }) {
   if (!days.some(day => day.incoming || day.outgoing || day.conversations)) {
     return (
-      <Panel title="Conversations activity" subtitle="Last 7 days · India time">
+      <Panel title={title} subtitle="Last 7 days · India time">
         <Empty>No conversation or message activity in the last 7 days.</Empty>
       </Panel>
     );
   }
   const max = Math.max(1, ...days.map(day => day.incoming + day.outgoing));
   return (
-    <Panel title="Conversations activity" subtitle="Last 7 days · India time">
+    <Panel title={title} subtitle="Last 7 days · India time">
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-primary" />Incoming messages</span>
         <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-sky-400" />Outgoing messages</span>
@@ -87,7 +89,7 @@ function Conversations({ days }: { days: OperationalOverview["days"] }) {
   );
 }
 
-function Health({ data }: { data: OperationalOverview["health"] }) {
+export function MessagingHealth({ data }: { data: OperationalOverview["health"] }) {
   const statuses = [
     ["Delivered", data.delivered], ["Read", data.read], ["Failed", data.failed],
     ["Pending", data.pending], ["Sent", data.sent], ["Unknown", data.unknown],
@@ -126,7 +128,7 @@ function Breakdown({ items }: { items: OperationalOverview["breakdown"] }) {
             {items.map(({ product, metrics }) => (
               <tr key={product} className="border-t border-border/60">
                 <th scope="row" className="py-2 font-medium">
-                  <Link href={`/admin?product=${product}`} className="inline-flex min-h-10 items-center gap-2 rounded-sm hover:underline">
+                  <Link href={adminProductPath(product)} className="inline-flex min-h-10 items-center gap-2 rounded-sm hover:underline">
                     <BrandLogo vertical={product} decorative />{verticalConfig[product].label}
                   </Link>
                 </th>
@@ -139,7 +141,7 @@ function Breakdown({ items }: { items: OperationalOverview["breakdown"] }) {
       <ul className="mt-3 divide-y divide-border/60 sm:hidden">
         {items.map(({ product, metrics }) => (
           <li key={product} className="py-2">
-            <Link href={`/admin?product=${product}`} className="flex min-h-10 items-center gap-2 rounded-sm text-sm font-medium hover:underline">
+            <Link href={adminProductPath(product)} className="flex min-h-10 items-center gap-2 rounded-sm text-sm font-medium hover:underline">
               <BrandLogo vertical={product} decorative />{verticalConfig[product].label}
             </Link>
             <dl className="grid grid-cols-2 gap-2 pb-1 text-xs">
@@ -152,41 +154,53 @@ function Breakdown({ items }: { items: OperationalOverview["breakdown"] }) {
   );
 }
 
-export function OperationalDashboard({ data, allProducts }: { data: OperationalOverview; allProducts: boolean }) {
+export function BusinessAttention({ items }: { items: OperationalOverview["attention"] }) {
+  return (
+    <Panel title="Business attention" subtitle="Connection issues and failures recorded today">
+      {items.length ? <ul className="mt-2 divide-y divide-border/60">
+        {items.map(business => {
+          const reasons = [
+            business.disconnected && "WhatsApp disconnected or in error",
+            business.setup && "WhatsApp setup incomplete",
+            business.failures > 0 && `${business.failures} message ${business.failures === 1 ? "failure" : "failures"}`,
+            business.webhookFailures > 0 && `${business.webhookFailures} webhook ${business.webhookFailures === 1 ? "failure" : "failures"}`,
+          ].filter(Boolean);
+          return <li key={business.id}>
+            <Link href={`/business/${encodeURIComponent(business.id)}`} className="flex min-h-11 items-center justify-between gap-2 rounded-sm py-2 hover:text-primary">
+              <span className="min-w-0"><span className="block break-words text-sm font-medium">{business.name}</span><span className="block text-xs text-muted-foreground">{reasons.join(" · ")}</span></span>
+              <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+            </Link>
+          </li>;
+        })}
+      </ul> : <Empty>No businesses have a recorded issue in this view.</Empty>}
+    </Panel>
+  );
+}
+
+export function RecentActivity({ items }: { items: OperationalOverview["activity"] }) {
+  return (
+    <Panel title="Recent activity" subtitle="Last 7 days · India time">
+      {items.length ? <ul className="mt-2 divide-y divide-border/60">
+        {items.map((event, index) => <li key={`${event.id}:${event.at}:${event.event}:${index}`} className="flex flex-wrap justify-between gap-x-3 gap-y-1 py-2">
+          <div className="min-w-0"><p className="text-sm font-medium">{event.event}</p><p className="break-words text-xs text-muted-foreground">{event.name}</p></div>
+          <time dateTime={event.at} className="text-xs text-muted-foreground">{eventFormat.format(new Date(event.at))}</time>
+        </li>)}
+      </ul> : <Empty>No recent operational activity in this view.</Empty>}
+    </Panel>
+  );
+}
+
+export function OperationalDashboard({ data }: { data: OperationalOverview }) {
   return (
     <>
-      <Metrics data={data.metrics} />
+      <OperationalMetrics data={data.metrics} />
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Conversations days={data.days} />
-        <Health data={data.health} />
-        <Panel title="Business attention" subtitle="Connection issues and failures recorded today">
-          {data.attention.length ? <ul className="mt-2 divide-y divide-border/60">
-            {data.attention.map(business => {
-              const reasons = [
-                business.disconnected && "WhatsApp disconnected or in error",
-                business.setup && "WhatsApp setup incomplete",
-                business.failures > 0 && `${business.failures} message ${business.failures === 1 ? "failure" : "failures"}`,
-                business.webhookFailures > 0 && `${business.webhookFailures} webhook ${business.webhookFailures === 1 ? "failure" : "failures"}`,
-              ].filter(Boolean);
-              return <li key={business.id}>
-                <Link href={`/business/${encodeURIComponent(business.id)}`} className="flex min-h-11 items-center justify-between gap-2 rounded-sm py-2 hover:text-primary">
-                  <span className="min-w-0"><span className="block break-words text-sm font-medium">{business.name}</span><span className="block text-xs text-muted-foreground">{reasons.join(" · ")}</span></span>
-                  <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                </Link>
-              </li>;
-            })}
-          </ul> : <Empty>No businesses have a recorded issue in this view.</Empty>}
-        </Panel>
-        <Panel title="Recent activity" subtitle="Last 7 days · India time">
-          {data.activity.length ? <ul className="mt-2 divide-y divide-border/60">
-            {data.activity.map((event, index) => <li key={`${event.id}:${event.at}:${event.event}:${index}`} className="flex flex-wrap justify-between gap-x-3 gap-y-1 py-2">
-              <div className="min-w-0"><p className="text-sm font-medium">{event.event}</p><p className="break-words text-xs text-muted-foreground">{event.name}</p></div>
-              <time dateTime={event.at} className="text-xs text-muted-foreground">{eventFormat.format(new Date(event.at))}</time>
-            </li>)}
-          </ul> : <Empty>No recent operational activity in this view.</Empty>}
-        </Panel>
+        <MessagingActivity days={data.days} />
+        <MessagingHealth data={data.health} />
+        <BusinessAttention items={data.attention} />
+        <RecentActivity items={data.activity} />
       </div>
-      {allProducts && <Breakdown items={data.breakdown} />}
+      <Breakdown items={data.breakdown} />
       <Link href="/admin/system" className="w-fit rounded-sm text-xs text-muted-foreground underline-offset-4 hover:underline">View test, demo and migration businesses in Test &amp; Staging</Link>
     </>
   );

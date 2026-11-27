@@ -260,10 +260,10 @@ async function main() {
   for (const label of ["Catalog", "Orders", "Bookings", "New business"])
     assert.ok(!shell.includes(`label: "${label}"`));
   const switcher = fs.readFileSync(
-    "app/admin/components/workspace-switcher.tsx",
+    "app/business/[businessId]/layout.tsx",
     "utf8",
   );
-  assert.ok(switcher.includes(".filter((profile) => profile.active && isActiveTanyVertical(profile.vertical))"));
+  assert.ok(switcher.includes("active && isActiveTanyVertical(vertical)"));
   assert.ok(!switcher.includes("test(profile.whatsappPhoneNumberId)"));
   const flow = createHarness();
   const incoming = flow.load(
