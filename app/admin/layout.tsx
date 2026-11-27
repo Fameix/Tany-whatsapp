@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { WorkspaceSwitcher } from "./components/workspace-switcher";
 import { WorkspaceSwitcherLoading } from "./components/workspace-menu";
 import type { Metadata } from "next";
@@ -22,6 +23,8 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // The session check reads the current time, so the layout must render per request.
+  await connection();
   try {
     await requireDashboardAccess();
   } catch (error) {

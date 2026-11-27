@@ -1,46 +1,35 @@
+import Link from "next/link";
+import { Suspense } from "react";
+import { connection } from "next/server";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-import Link from "next/link";
-
-import { Suspense } from "react";
-
-import { connection } from "next/server";
-
-import { listBusinesses } from "@/lib/admin/services";
-
-import { BusinessList } from "@/app/admin/components/business-list";
-
 import { LoadingPanel } from "@/app/admin/components/shared";
+import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
+import { BusinessTable, EmptyPanel, HiddenTenantsNote, PageHeader, isSuperAdmin } from "@/app/admin/components/control-center/ui";
+import { listProductBusinesses, realBusinesses } from "@/lib/admin/product-center";
 
+/** Real businesses across all products. Test, demo and migration tenants live in Test & staging. */
 async function Directory() {
   await connection();
-
-  const businesses = await listBusinesses();
-
-  return <BusinessList businesses={businesses} />;
+  if (!(await isSuperAdmin())) return <DashboardAccessRequired />;
+  const all = await listProductBusinesses();
+  const businesses = realBusinesses(all);
+  return (
+    <div className="flex flex-col gap-3">
+      {businesses.length
+        ? <BusinessTable businesses={businesses} actions={business => <Link href={`/admin/businesses/${encodeURIComponent(business.id)}`} className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">Profile</Link>} />
+        : <EmptyPanel title="No businesses yet" detail="Real businesses appear here once they're created. Test, demo and migration tenants are listed in Test & staging." />}
+      <HiddenTenantsNote count={all.length - businesses.length} href="/admin/system" />
+    </div>
+  );
 }
 
 export default function BusinessesPage() {
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Businesses</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage your businesses, profiles, and catalogs.
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/admin/businesses/new">
-            <Plus />
-            New business
-          </Link>
-        </Button>
-      </div>
-      <Suspense fallback={<LoadingPanel />}>
-        <Directory />
-      </Suspense>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-8">
+      <PageHeader title="Businesses" description="Every business using a Tany product."
+        action={<Button asChild size="sm"><Link href="/admin/businesses/new"><Plus />New business</Link></Button>} />
+      <Suspense fallback={<LoadingPanel />}><Directory /></Suspense>
     </div>
   );
 }

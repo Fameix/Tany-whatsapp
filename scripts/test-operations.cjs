@@ -242,14 +242,18 @@ async function main() {
   const shell = fs.readFileSync("app/admin/components/admin-shell.tsx", "utf8");
   for (const label of [
     "Overview",
+    "Products",
+    "Businesses",
     "Inbox",
-    "Contacts",
+    "Customers",
     "Templates",
     "Campaigns",
     "Automations",
     "Message Status",
     "Webhook Health",
     "WhatsApp Accounts",
+    "Setup Requests",
+    "Test & Staging",
     "Settings",
   ])
     assert.ok(shell.includes(`label: "${label}"`));

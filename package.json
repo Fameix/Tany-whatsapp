@@ -42,7 +42,8 @@
     "test:cloudflare-build-config": "node --import tsx scripts/test-cloudflare-build-config.cjs",
     "test:template-library": "node --import tsx --conditions=react-server scripts/test-template-library.cjs",
     "test:automation-template-source": "node scripts/test-automation-template-source.cjs",
-    "test:whatsapp-business-profile": "node --import tsx --conditions=react-server scripts/test-whatsapp-business-profile.cjs"
+    "test:whatsapp-business-profile": "node --import tsx --conditions=react-server scripts/test-whatsapp-business-profile.cjs",
+    "test:super-admin-control-center": "node --import tsx --conditions=react-server scripts/test-super-admin-control-center.cjs"
   },
   "dependencies": {
     "@cloudflare/workers-response-store": "^1.1.3",

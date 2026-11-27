@@ -17,6 +17,9 @@ import {
   MessageCircle,
   Settings,
   Home,
+  Boxes,
+  Building2,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminBusiness } from "@/lib/admin/types";
@@ -89,23 +92,41 @@ function linksFor(business?: AdminBusiness): NavLink[] {
     const { primary, secondary } = businessNavigation(business);
     return [...primary, ...secondary];
   }
+  return adminNavigation().flatMap((group) => group.links);
+}
+
+/** Super Admin operations and configuration navigation. */
+function adminNavigation(): Array<{ label?: string; links: NavLink[] }> {
   const root = "/admin";
   return [
-    { label: "Overview", href: root, icon: LayoutDashboard },
-    { label: "Inbox", href: `${root}/inbox`, icon: Inbox },
-    { label: "Contacts", href: `${root}/contacts`, icon: Users },
-    { label: "Templates", href: `${root}/templates`, icon: FileText },
-    { label: "Campaigns", href: `${root}/campaigns`, icon: Megaphone },
-    { label: "Automations", href: `${root}/automations`, icon: Workflow },
     {
-      label: "Message Status",
-      href: `${root}/message-status`,
-      icon: CheckCheck,
+      links: [
+        { label: "Overview", href: root, icon: LayoutDashboard },
+        { label: "Businesses", href: `${root}/businesses`, icon: Building2, nested: true },
+        { label: "Inbox", href: `${root}/inbox`, icon: Inbox },
+        { label: "Customers", href: `${root}/contacts`, icon: Users },
+        { label: "Templates", href: `${root}/templates`, icon: FileText },
+        { label: "Campaigns", href: `${root}/campaigns`, icon: Megaphone },
+        { label: "Automations", href: `${root}/automations`, icon: Workflow },
+      ],
     },
-    { label: "Webhook Health", href: `${root}/webhook-health`, icon: Activity },
-    { label: "WhatsApp Accounts", href: `${root}/whatsapp-accounts`, icon: MessageCircle },
-    { label: "Setup Requests", href: `${root}/setup-requests`, icon: MessageCircle },
-    { label: "Settings", href: `${root}/settings`, icon: Settings },
+    {
+      label: "Operations",
+      links: [
+        { label: "Message Status", href: `${root}/message-status`, icon: CheckCheck },
+        { label: "Webhook Health", href: `${root}/webhook-health`, icon: Activity },
+        { label: "WhatsApp Accounts", href: `${root}/whatsapp-accounts`, icon: MessageCircle },
+        { label: "Setup Requests", href: `${root}/setup-requests`, icon: MessageCircle },
+      ],
+    },
+    {
+      label: "System",
+      links: [
+        { label: "Test & Staging", href: `${root}/system`, icon: FlaskConical },
+        { label: "Products", href: `${root}/products`, icon: Boxes, nested: true },
+        { label: "Settings", href: `${root}/settings`, icon: Settings },
+      ],
+    },
   ];
 }
 function Navigation({ links }: { links: NavLink[] }) {
@@ -165,14 +186,18 @@ function WorkspaceSidebar({
             </SidebarGroup>
           </>
         ) : (
-          <SidebarGroup className="px-2">
-            <SidebarGroupLabel className="px-2 text-[11px]">
-              Products
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <Suspense fallback={loading}><Navigation links={linksFor()} /></Suspense>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <>
+            {adminNavigation().map((group, index) => (
+              <SidebarGroup key={group.label ?? "main"} className={index ? "px-2" : "px-2 pt-4"}>
+                {group.label && (
+                  <SidebarGroupLabel className="px-2 text-[11px]">{group.label}</SidebarGroupLabel>
+                )}
+                <SidebarGroupContent>
+                  <Suspense fallback={loading}><Navigation links={group.links} /></Suspense>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
+          </>
         )}
       </SidebarContent>
 
@@ -187,7 +212,9 @@ function Breadcrumb({ business }: { business?: AdminBusiness }) {
   const current =
     links.find((entry) => entry.href === pathname)?.label ??
     (business ? businessPageLabels[pathname.slice(root.length + 1)] ?? (pathname.startsWith(`${root}/templates/`) ? "Template" : undefined) : undefined) ??
-    (pathname.endsWith("/new") ? "New business" : business ? "Workspace" : "Business profile");
+    (pathname.endsWith("/new") ? "New business" : undefined) ??
+    (!business ? links.find((entry) => entry.nested && pathname.startsWith(`${entry.href}/`))?.label : undefined) ??
+    (business ? "Workspace" : "Business profile");
   return (
     <nav
       aria-label="Breadcrumb"

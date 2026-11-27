@@ -37,9 +37,11 @@ function main() {
   assert.match(businessLoader, /isActiveTanyVertical\(business\.vertical\)/);
 
   const productResolver = source("app/admin/products/[product]/page.tsx");
-  assert.match(productResolver, /listBusinessProfiles/);
-  assert.ok(productResolver.includes("redirect(`/business/${encodeURIComponent(business.id)}`)"));
-  assert.doesNotMatch(productResolver, /no customer or WhatsApp data is loaded/);
+  assert.match(productResolver, /isSuperAdmin\(\)/);
+  assert.match(productResolver, /listProductBusinesses\(\)\)\.filter\(business => business\.product === product\.id\)/);
+  assert.match(productResolver, /realBusinesses\(all\)/);
+  const businessTable = source("app/admin/components/control-center/ui.tsx");
+  assert.ok(businessTable.includes("`/business/${encodeURIComponent(business.id)}`"));
 
   const workspaceLayout = source("app/business/[businessId]/layout.tsx");
   assert.match(workspaceLayout, /requireDashboardAccess\(businessId\)/);
@@ -47,7 +49,7 @@ function main() {
   assert.doesNotMatch(workspaceLayout, /demo-retail/);
 
   console.log(
-    "PASS: signed dashboard authorization, tenant-scoped access, real Firestore workspace discovery, and stable business-ID navigation are enforced.",
+    "PASS: signed dashboard authorization, product-scoped discovery, tenant-scoped access, and stable business-ID navigation are enforced.",
   );
 }
 

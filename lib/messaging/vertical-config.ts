@@ -37,3 +37,13 @@ export function isTanyVertical(value: unknown): value is TanyVertical {
 export function isActiveTanyVertical(value: unknown): value is ActiveTanyVertical {
   return typeof value === "string" && (activeTanyVerticals as readonly string[]).includes(value);
 }
+
+export type TanyProductStatus = "live" | "coming_soon";
+export type TanyProduct = { id: TanyVertical; name: string; status: TanyProductStatus };
+
+/** The 12 Tany products, in registry order. Live means `activeTanyVerticals` enables it. */
+export const tanyProducts: readonly TanyProduct[] = (Object.keys(verticalConfig) as TanyVertical[]).map(id => ({
+  id,
+  name: verticalConfig[id].label,
+  status: isActiveTanyVertical(id) ? "live" : "coming_soon",
+}));
