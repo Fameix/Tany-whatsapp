@@ -120,6 +120,10 @@ export async function automationDashboard(businessId: string) {
         } as Run;
       })
       .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? "")),
+    // Templates this business has that automations can't use yet, so the UI can explain why.
+    unavailableTemplates: templates
+      .filter((d) => d.businessId === businessId && ["draft", "pending", "rejected"].includes(String(d.status)))
+      .map((d) => ({ name: String(d.name ?? "Template"), status: d.status as "draft" | "pending" | "rejected" })),
     // This business's Templates library only: approved by Meta and sendable by the engine.
     templates: templates
       .filter((d) => d.businessId === businessId && d.status === "approved" && isSendableWithBodyParameters(d.components))

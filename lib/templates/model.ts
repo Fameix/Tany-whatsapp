@@ -149,3 +149,25 @@ export function statusFromMeta(status: unknown): TemplateStatus {
   if (value === "REJECTED" || value === "DISABLED" || value === "PAUSED") return "rejected";
   return "pending";
 }
+
+/** Templates a business has that can't be used yet (draft, in review, rejected). */
+export type UnusableTemplate = { name: string; status: Exclude<TemplateStatus, "approved"> };
+
+/** Plain-language status of a business's templates for places that need approved ones. */
+export function templateAvailabilitySummary(templates: UnusableTemplate[]): { headline: string; detail: string } {
+  if (!templates.length) return { headline: "No approved templates yet", detail: "Create a template in Templates and submit it to Meta. Approved templates can be used in automations." };
+  if (templates.length === 1) {
+    const [{ name, status }] = templates;
+    const detail = status === "pending" ? `Your template "${name}" is currently In review. It will become available for automations after Meta approves it.`
+      : status === "rejected" ? `Your template "${name}" was rejected by Meta. Edit and resubmit it to use it in automations.`
+        : `Your template "${name}" is a draft. Submit it to Meta for approval to use it in automations.`;
+    return { headline: "No approved templates yet", detail };
+  }
+  const count = (status: UnusableTemplate["status"]) => templates.filter(template => template.status === status).length;
+  const parts = [
+    count("pending") && `${count("pending")} ${count("pending") === 1 ? "template is" : "templates are"} in review`,
+    count("draft") && `${count("draft")} ${count("draft") === 1 ? "draft" : "drafts"}`,
+    count("rejected") && `${count("rejected")} rejected`,
+  ].filter(Boolean);
+  return { headline: "No approved templates yet", detail: `${parts.join(" · ")}. Templates become available for automations after Meta approves them.` };
+}

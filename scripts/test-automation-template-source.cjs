@@ -83,6 +83,26 @@ async function main() {
   assert.deepEqual((await service.automationDashboard("retail-b")).templates.map(t => t.id), ["b-approved"], "another business sees only its own");
   console.log("PASS selector lists this business's approved templates only: no draft, in review, rejected, unsendable or other-tenant templates");
 
+  // Unusable templates are summarised (never selectable) so an empty picker is explained.
+  assert.deepEqual(dashboard.unavailableTemplates.map(t => t.status).sort(), ["draft", "pending", "rejected"], "this business's draft, in review and rejected templates");
+  assert.ok(dashboard.unavailableTemplates.every(t => t.name.startsWith("a_")), "no other tenant's templates in the summary");
+  assert.deepEqual((await service.automationDashboard("retail-b")).unavailableTemplates, []);
+  const { templateAvailabilitySummary } = templateModel;
+  assert.deepEqual(templateAvailabilitySummary([{ name: "sellers_hypermarket", status: "pending" }]), {
+    headline: "No approved templates yet",
+    detail: 'Your template "sellers_hypermarket" is currently In review. It will become available for automations after Meta approves it.',
+  });
+  assert.match(templateAvailabilitySummary([{ name: "x", status: "draft" }]).detail, /is a draft\. Submit it to Meta/);
+  assert.match(templateAvailabilitySummary([{ name: "x", status: "rejected" }]).detail, /was rejected by Meta\. Edit and resubmit/);
+  assert.match(templateAvailabilitySummary([{ name: "a", status: "pending" }, { name: "b", status: "pending" }, { name: "c", status: "draft" }]).detail, /^2 templates are in review · 1 draft\./);
+  assert.match(templateAvailabilitySummary([{ name: "a", status: "pending" }, { name: "b", status: "rejected" }]).detail, /^1 template is in review · 1 rejected\./);
+  assert.match(templateAvailabilitySummary([]).detail, /Create a template in Templates/);
+  for (const text of ["No approved templates available", "View templates", "TemplateAvailabilityPanel unavailable={data.unavailableTemplates}"])
+    assert.ok(builder.includes(text) || fs.readFileSync("app/admin/components/automations/automation-builder.tsx", "utf8").includes(text), `builder shows "${text}"`);
+  const page = fs.readFileSync("app/admin/components/automations/automation-page.tsx", "utf8");
+  assert.ok(page.indexOf("await refreshTemplateStatuses(businessId)") > 0 && page.indexOf("await refreshTemplateStatuses(businessId)") < page.indexOf("data = await automationDashboard(businessId)"), "Meta status is refreshed before templates are listed");
+  console.log("PASS unusable templates are explained (single status or counts) with a link to Templates; Meta status refreshes on load");
+
   // 4. Publishing a template step requires this business's approved template.
   const automation = (templateId, parameters = ["{{customer_name}}", "{{order_id}}"]) => ({
     name: "Order confirmed", description: "", trigger: { type: "order.status.changed" }, conditions: [{ type: "order_status", value: "confirmed" }],

@@ -23,7 +23,7 @@ import {
   type Action,
 } from "@/lib/automations/model";
 import { getVerticalDefinition, type AutomationRecipe } from "@/lib/automations/vertical-registry";
-import type { TemplateButton } from "@/lib/templates/model";
+import { templateAvailabilitySummary, type TemplateButton, type UnusableTemplate } from "@/lib/templates/model";
 import { CategoryBadge, TemplatePreview } from "@/app/business/_components/templates/template-preview";
 import type { TanyVertical } from "@/lib/messaging/types";
 import { automationPlaceholders } from "@/lib/automations/placeholders";
@@ -44,6 +44,8 @@ type Dashboard = {
   automations: Automation[];
   runs: Run[];
   templates: ApprovedTemplate[];
+  /** Draft, in-review and rejected templates: shown only to explain why none are usable. */
+  unavailableTemplates: UnusableTemplate[];
 };
 const selectClass = "h-10 w-full rounded-md border bg-background px-3 text-sm";
 
@@ -60,21 +62,26 @@ const transactionalTriggers = ["order.created", "order.status.changed", "booking
 const templatesHref = (businessId?: string) => (businessId ? `/business/${encodeURIComponent(businessId)}/templates` : "#");
 const triggerLabel = (type: string) => (triggerOptions as Record<string, string>)[type] ?? type;
 
+/** Explains why no template is usable yet; templates are never selectable from here. */
+function TemplateAvailabilityPanel({ unavailable, businessId, headline }: { unavailable: UnusableTemplate[]; businessId?: string; headline?: string }) {
+  const summary = templateAvailabilitySummary(unavailable);
+  return (
+    <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-left text-sm">
+      <p className="font-medium">{headline ?? summary.headline}</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{summary.detail}</p>
+      <a href={templatesHref(businessId)} className="mt-2 inline-flex text-xs font-medium text-primary hover:underline">View templates</a>
+    </div>
+  );
+}
+
 /** Approved templates from this business's Templates library; the only source of message content. */
-function TemplatePicker({ templates, businessId, triggerType, value, onChange }: {
-  templates: ApprovedTemplate[]; businessId?: string; triggerType: string; value: string; onChange: (id: string) => void;
+function TemplatePicker({ templates, unavailable, businessId, triggerType, value, onChange }: {
+  templates: ApprovedTemplate[]; unavailable: UnusableTemplate[]; businessId?: string; triggerType: string; value: string; onChange: (id: string) => void;
 }) {
   const transactional = transactionalTriggers.includes(triggerType);
   const ordered = [...templates].sort((x, y) => (transactional ? Number(y.category === "utility") - Number(x.category === "utility") : 0) || x.name.localeCompare(y.name));
   const selected = templates.find((t) => t.id === value);
-  if (!templates.length)
-    return (
-      <div className="rounded-lg border border-dashed p-4 text-sm">
-        <p className="font-medium">No approved templates yet</p>
-        <p className="mt-1 text-xs text-muted-foreground">Create a template in Templates and submit it to Meta. Once approved, it appears here.</p>
-        <a href={templatesHref(businessId)} className="mt-2 inline-flex text-xs font-medium text-primary hover:underline">Open Templates</a>
-      </div>
-    );
+  if (!templates.length) return <TemplateAvailabilityPanel unavailable={unavailable} businessId={businessId} headline="No approved templates available" />;
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -421,6 +428,9 @@ export function AutomationBuilder({
                   Start from a recipe that sets up the trigger and template
                   step, or build your own steps.
                 </p>
+                {data && !data.templates.length && data.unavailableTemplates.length > 0 && (
+                  <TemplateAvailabilityPanel unavailable={data.unavailableTemplates} businessId={businessId} />
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Button
                     className="h-auto min-h-14 whitespace-normal py-4"
@@ -811,6 +821,7 @@ export function AutomationBuilder({
                           <>
                             <TemplatePicker
                               templates={data?.templates ?? []}
+                              unavailable={data?.unavailableTemplates ?? []}
                               businessId={businessId}
                               triggerType={draft.trigger.type}
                               value={a.templateId ?? ""}
@@ -1018,6 +1029,9 @@ export function AutomationBuilder({
                   Create automation
                 </Button>
                 <p className="mt-2 max-w-md text-xs text-muted-foreground">Automations can send your approved WhatsApp templates based on customer actions or business events.</p>
+                {data && !data.templates.length && data.unavailableTemplates.length > 0 && (
+                  <div className="mt-4 w-full max-w-md"><TemplateAvailabilityPanel unavailable={data.unavailableTemplates} businessId={businessId} /></div>
+                )}
               </div>
             ) : (
             <div className="overflow-x-auto rounded-lg border">
