@@ -6,6 +6,8 @@ import { WhatsAppDiagnostics, WhatsAppProfileLink } from "./whatsapp-diagnostics
 import Link from "next/link";
 import { getBusinessProfile } from "@/lib/whatsapp/business-profile";
 import { isProfileIncomplete } from "@/lib/whatsapp/business-profile-model";
+import { localStagingWorkspace } from "@/lib/admin/product-test-data";
+import { stagingWorkspaceUrl } from "@/lib/admin/staging-environment";
 
 /** Optional next step after connecting; never blocks the connection. */
 async function profileIncomplete(businessId: string) {
@@ -24,7 +26,8 @@ export async function BusinessWhatsApp({ businessId, detailed = false }: { busin
   const account = await getPostgresBusinessAccount(businessId);
   const status = account?.status ?? "Not connected";
   const copy = statusCopy(status);
-  const suggestProfile = !detailed && status === "Connected" && await profileIncomplete(businessId);
+  const localStaging = await localStagingWorkspace();
+  const suggestProfile = !localStaging && !detailed && status === "Connected" && await profileIncomplete(businessId);
   const details = account ? [
     ["Display name", account.displayName],
     ["Phone number", account.phone ? formatPhone(account.phone) : "—"],
@@ -48,7 +51,8 @@ export async function BusinessWhatsApp({ businessId, detailed = false }: { busin
           </div>
         </div>
         <div className="shrink-0">
-          <WhatsAppAccountActions status={status} hasConfiguredPhone={!!account?.phoneNumberId} businessId={businessId} />
+          <WhatsAppAccountActions status={status} hasConfiguredPhone={!!account?.phoneNumberId} businessId={businessId}
+            stagingHref={localStaging ? `${stagingWorkspaceUrl(businessId)}/whatsapp` : undefined} />
         </div>
       </Surface>
       {detailed

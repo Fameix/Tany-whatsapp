@@ -2,9 +2,9 @@
  * API can authorize it against the caller's session (business or Super Admin). */
 export type DisconnectResult = { ok: true } | { ok: false; message: string };
 
-export async function requestWhatsAppDisconnect(businessId: string, fetcher: typeof fetch = fetch): Promise<DisconnectResult> {
+export async function requestWhatsAppDisconnect(businessId: string, fetcher: typeof fetch = fetch, endpoint?: string): Promise<DisconnectResult> {
   try {
-    const response = await fetcher(`/api/dashboard/whatsapp-connection?businessId=${encodeURIComponent(businessId)}`, {
+    const response = await fetcher(endpoint ?? `/api/dashboard/whatsapp-connection?businessId=${encodeURIComponent(businessId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "disconnect" }),

@@ -20,14 +20,23 @@ export function WhatsAppAccountActions({
   status: initialStatus,
   hasConfiguredPhone: initialHasConfiguredPhone,
   businessId,
+  setupHref,
+  disconnectEndpoint,
+  reconnectHref,
+  stagingHref,
 }: {
   status: string;
   hasConfiguredPhone: boolean;
   businessId: string;
+  setupHref?: string;
+  disconnectEndpoint?: string;
+  reconnectHref?: string;
+  stagingHref?: string;
 }) {
   const [status, setStatus] = useState(initialStatus);
   const [hasConfiguredPhone, setHasConfiguredPhone] = useState(initialHasConfiguredPhone);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [pending, setPending] = useState(false);
   const [startingSetup, setStartingSetup] = useState(false);
   const [message, setMessage] = useState("");
@@ -37,6 +46,7 @@ export function WhatsAppAccountActions({
   const setupLabel = status.includes("unverified") ? "Continue setup" : status === "Error" || status === "Disconnected" ? "Reconnect WhatsApp" : "Connect WhatsApp";
 
   const startSetup = async () => {
+    if (setupHref) { router.push(setupHref); return; }
     setStartingSetup(true);
     setMessage("");
     try {
@@ -55,7 +65,7 @@ export function WhatsAppAccountActions({
     setPending(true);
     setMessage("");
     setDisconnectError("");
-    const result = await requestWhatsAppDisconnect(businessId);
+    const result = await requestWhatsAppDisconnect(businessId, fetch, disconnectEndpoint);
     setPending(false);
     if (!result.ok) {
       // Shown inside the dialog, which stays open, so the failure is visible.
@@ -66,26 +76,32 @@ export function WhatsAppAccountActions({
     setHasConfiguredPhone(false);
     setMessage("WhatsApp was disconnected. You can connect a number again when ready.");
     setConfirmOpen(false);
-    router.refresh();
+    if (reconnecting && reconnectHref) router.push(reconnectHref);
+    else router.refresh();
   };
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {!connected && <Button className="min-h-11" disabled={startingSetup} onClick={() => void startSetup()}>{startingSetup && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{startingSetup ? "Opening setup…" : setupLabel}</Button>}
-      {hasConfiguredPhone && <Button variant="outline" className="min-h-11" onClick={() => { setMessage(""); setDisconnectError(""); setConfirmOpen(true); }}>Disconnect WhatsApp</Button>}
+      {!connected && (stagingHref
+        ? <Button asChild className="min-h-11"><a href={stagingHref}>{setupLabel} on staging</a></Button>
+        : <Button className="min-h-11" disabled={startingSetup} onClick={() => void startSetup()}>{startingSetup && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{startingSetup ? "Opening setup…" : setupLabel}</Button>)}
+      {hasConfiguredPhone && reconnectHref && <Button variant="outline" className="min-h-11" onClick={() => { setReconnecting(true); setDisconnectError(""); setConfirmOpen(true); }}>Reconnect WhatsApp</Button>}
+      {hasConfiguredPhone && <Button variant="outline" className="min-h-11" disabled={!!stagingHref} onClick={() => { setReconnecting(false); setMessage(""); setDisconnectError(""); setConfirmOpen(true); }}>Disconnect WhatsApp</Button>}
       {message && <p className="basis-full text-sm text-destructive" role="alert">{message}</p>}
       <AlertDialog open={confirmOpen} onOpenChange={(open) => { if (!pending) setConfirmOpen(open); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect WhatsApp?</AlertDialogTitle>
-            <AlertDialogDescription>This removes the active number mapping for this business and stops WhatsApp messaging here. The account history is retained, and you can connect a number again later.</AlertDialogDescription>
+            <AlertDialogTitle>{reconnecting ? "Reconnect WhatsApp?" : "Disconnect WhatsApp?"}</AlertDialogTitle>
+            <AlertDialogDescription>{reconnecting
+              ? "This disconnects the current number first. Messaging will pause until you complete setup again."
+              : "This removes the active number mapping for this business and stops WhatsApp messaging here. The account history is retained, and you can connect a number again later."}</AlertDialogDescription>
           </AlertDialogHeader>
           {disconnectError && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">{disconnectError}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Keep connected</AlertDialogCancel>
             <AlertDialogAction disabled={pending} onClick={(event) => { event.preventDefault(); void disconnect(); }}>
               {pending && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
-              Disconnect WhatsApp
+              {reconnecting ? "Disconnect and continue" : "Disconnect WhatsApp"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

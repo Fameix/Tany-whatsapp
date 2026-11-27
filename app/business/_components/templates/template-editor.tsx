@@ -31,7 +31,7 @@ function Counter({ value, max }: { value: number; max: number }) {
   return <span className={cn("text-[11px] tabular-nums", value > max ? "text-primary" : "text-muted-foreground")}>{value}/{max}</span>;
 }
 
-export function TemplateEditor({ businessId, root, template, connected }: { businessId: string; root: string; template: EditorTemplate; connected: boolean }) {
+export function TemplateEditor({ businessId, root, template, connected, localStaging = false }: { businessId: string; root: string; template: EditorTemplate; connected: boolean; localStaging?: boolean }) {
   const router = useRouter();
   const [content, setContent] = useState(template.content);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -113,12 +113,12 @@ export function TemplateEditor({ businessId, root, template, connected }: { busi
             <Button variant="ghost" size="sm" onClick={() => run("delete")} disabled={pending} className="text-muted-foreground"><Trash2 className="size-4" aria-hidden="true" />Delete</Button>
           )}
           {template.status === "pending" && (
-            <Button variant="outline" size="sm" onClick={() => run("refresh")} disabled={pending}>{busy === "refresh" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}Check status</Button>
+            <Button variant="outline" size="sm" onClick={() => run("refresh")} disabled={pending || localStaging}>{busy === "refresh" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}Check status</Button>
           )}
           {editable && (
             <>
               <Button variant="outline" size="sm" onClick={() => run("save")} disabled={pending || (!!template.id && !dirty)}>{busy === "save" && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}Save draft</Button>
-              <Button size="sm" onClick={() => run("submit")} disabled={!canSubmit}>{busy === "submit" && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}Submit for approval</Button>
+              <Button size="sm" onClick={() => run("submit")} disabled={!canSubmit || localStaging}>{busy === "submit" && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}Submit for approval</Button>
             </>
           )}
         </div>
@@ -128,7 +128,8 @@ export function TemplateEditor({ businessId, root, template, connected }: { busi
       {template.status === "rejected" && template.rejectionReason && (
         <div className="flex gap-2 rounded-lg bg-primary/8 px-4 py-3 text-sm text-primary"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><p><span className="font-medium">Meta rejected this template:</span> {template.rejectionReason}. Edit it and submit again.</p></div>
       )}
-      {editable && !connected && <p className="rounded-lg bg-muted px-4 py-3 text-xs text-muted-foreground">Connect WhatsApp to submit templates to Meta. You can still save drafts.</p>}
+      {localStaging && (editable || template.status === "pending") && <p className="rounded-lg bg-muted px-4 py-3 text-xs text-muted-foreground">Open the staging workspace to submit templates or check their approval status. Drafts can be saved here.</p>}
+      {!localStaging && editable && !connected && <p className="rounded-lg bg-muted px-4 py-3 text-xs text-muted-foreground">Connect WhatsApp to submit templates to Meta. You can still save drafts.</p>}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <fieldset disabled={!editable} className="flex min-w-0 flex-col gap-6 rounded-xl bg-card p-4 shadow-[0_1px_2px_rgb(9_9_11/0.05),0_0_0_1px_rgb(9_9_11/0.06)] sm:p-6">

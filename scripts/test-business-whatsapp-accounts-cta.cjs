@@ -17,7 +17,7 @@ assert.match(operationsPage, /postgresDirectory && businessId && section === "wh
 assert.match(businessWhatsApp, /getPostgresBusinessAccount\(businessId\)/, "reads only this business's account");
 assert.doesNotMatch(businessWhatsApp, /getPostgresDirectoryOverview/, "never reads the cross-tenant directory");
 assert.match(businessWhatsApp, /const status = account\?\.status \?\? "Not connected"/);
-assert.match(businessWhatsApp, /<WhatsAppAccountActions status=\{status\} hasConfiguredPhone=\{!!account\?\.phoneNumberId\} businessId=\{businessId\} \/>/);
+assert.match(businessWhatsApp, /<WhatsAppAccountActions status=\{status\} hasConfiguredPhone=\{!!account\?\.phoneNumberId\} businessId=\{businessId\}[\s\S]*?stagingHref=/);
 // The Super Admin directory still renders the CTA only when explicitly requested.
 assert.match(operationsPage, /showConnectionCta=\{clientFacing && section === "whatsapp-accounts"\}/);
 assert.match(operationsPage, /clientFacing = false/);
@@ -28,6 +28,6 @@ assert.match(actions, /status\.includes\("unverified"\) \? "Continue setup"/);
 assert.match(actions, /status === "Error" \|\| status === "Disconnected" \? "Reconnect WhatsApp"/);
 assert.match(actions, /: "Connect WhatsApp"/);
 assert.match(actions, /const connected = status === "Connected"/);
-assert.match(actions, /!connected && <Button className=/);
+assert.match(actions, /!connected && \(stagingHref[\s\S]*?: <Button className=/);
 
 console.log("PASS business WhatsApp Accounts route renders Connect WhatsApp for Not connected; Super Admin default remains off.");

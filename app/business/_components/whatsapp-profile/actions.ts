@@ -4,6 +4,7 @@ import { DashboardAuthorizationError, requireDashboardAccess } from "@/lib/admin
 import { loadBusiness } from "@/app/business/_components/load-business";
 import { BusinessProfileError, getBusinessProfile, updateBusinessProfile, updateProfilePicture, type ProfileSnapshot } from "@/lib/whatsapp/business-profile";
 import type { EditableProfile } from "@/lib/whatsapp/business-profile-model";
+import { requireProductWhatsAppBusiness } from "@/lib/admin/product-whatsapp-access";
 
 /** The snapshot never carries credentials: profile fields, display name, status and Meta IDs only. */
 export type ProfileActionResult = { ok: true; snapshot: ProfileSnapshot; message: string } | { ok: false; message: string };
@@ -17,9 +18,10 @@ function failure(error: unknown): ProfileActionResult {
 
 const str = (value: unknown, max: number) => (typeof value === "string" ? value.slice(0, max) : "");
 
-export async function saveBusinessProfile(businessId: string, input: unknown): Promise<ProfileActionResult> {
+export async function saveBusinessProfile(businessId: string, input: unknown, product?: string): Promise<ProfileActionResult> {
   try {
-    await requireDashboardAccess(businessId);
+    if (product !== undefined) await requireProductWhatsAppBusiness(product, businessId, true);
+    else await requireDashboardAccess(businessId);
     await loadBusiness(businessId);
     const value = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
     const profile: EditableProfile = {
@@ -33,9 +35,10 @@ export async function saveBusinessProfile(businessId: string, input: unknown): P
   } catch (error) { return failure(error); }
 }
 
-export async function uploadProfilePicture(businessId: string, form: FormData): Promise<ProfileActionResult> {
+export async function uploadProfilePicture(businessId: string, form: FormData, product?: string): Promise<ProfileActionResult> {
   try {
-    await requireDashboardAccess(businessId);
+    if (product !== undefined) await requireProductWhatsAppBusiness(product, businessId, true);
+    else await requireDashboardAccess(businessId);
     await loadBusiness(businessId);
     const file = form.get("picture");
     if (!(file instanceof Blob)) return { ok: false, message: "Choose an image." };
@@ -46,9 +49,10 @@ export async function uploadProfilePicture(businessId: string, form: FormData): 
 }
 
 /** Re-reads everything from Meta; nothing is served from a local copy. */
-export async function refreshBusinessProfile(businessId: string): Promise<ProfileActionResult> {
+export async function refreshBusinessProfile(businessId: string, product?: string): Promise<ProfileActionResult> {
   try {
-    await requireDashboardAccess(businessId);
+    if (product !== undefined) await requireProductWhatsAppBusiness(product, businessId, true);
+    else await requireDashboardAccess(businessId);
     await loadBusiness(businessId);
     return { ok: true, snapshot: await getBusinessProfile(businessId), message: "Refreshed from Meta." };
   } catch (error) { return failure(error); }

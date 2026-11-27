@@ -103,37 +103,41 @@ export function WhatsAppConnection({
   dashboardHref,
   businessId,
   connectLabel = "Connect with Meta",
+  signupEndpoint,
+  stagingHref,
 }: {
   initialConnection: ClientWhatsAppConnection;
   embeddedSignup: EmbeddedSignupConfig | null;
   dashboardHref: string;
   businessId: string;
   connectLabel?: string;
+  signupEndpoint?: string;
+  stagingHref?: string;
 }) {
   const router = useRouter();
   const [connection, setConnection] = useState(initialConnection);
   const [phase, setPhase] = useState<Phase>("connect");
   const [sdkStatus, setSdkStatus] = useState<SdkStatus>(embeddedSignup ? "loading" : "unconfigured");
   const configMissing = "WhatsApp signup is not configured for this environment (missing Meta App ID or Embedded Signup Config ID). Please contact Tany support.";
-  const [error, setError] = useState(!embeddedSignup ? configMissing : initialConnection.status === "error" ? initialConnection.setupMessage : "");
+  const [error, setError] = useState(stagingHref ? "" : !embeddedSignup ? configMissing : initialConnection.status === "error" ? initialConnection.setupMessage : "");
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const sdkRef = useRef<FacebookSdk | null>(null);
 
   useEffect(() => {
-    if (!embeddedSignup) return;
+    if (!embeddedSignup || stagingHref) return;
     let active = true;
     loadMetaSdk(embeddedSignup).then(
       (sdk) => { if (active) { sdkRef.current = sdk; setSdkStatus("ready"); } },
       (reason) => { console.error("Meta Embedded Signup SDK failed to load", reason); if (active) setSdkStatus("failed"); },
     );
     return () => { active = false; };
-  }, [embeddedSignup]);
+  }, [embeddedSignup, stagingHref]);
 
   const completeSignup = useCallback(async (code: string, hints: SignupHints) => {
     setPhase("connecting");
     try {
-      const response = await fetch(`/api/dashboard/whatsapp-embedded-signup?businessId=${encodeURIComponent(businessId)}`, {
+      const response = await fetch(signupEndpoint ?? `/api/dashboard/whatsapp-embedded-signup?businessId=${encodeURIComponent(businessId)}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, ...hints }),
       });
       const result = await response.json().catch(() => ({})) as { message?: string; dashboardUrl?: string };
@@ -144,7 +148,7 @@ export function WhatsAppConnection({
       setPhase("connect");
       setError(reason instanceof Error ? reason.message : "Could not complete WhatsApp signup. Please try again.");
     }
-  }, [businessId, dashboardHref, router]);
+  }, [businessId, dashboardHref, router, signupEndpoint]);
 
   const launchEmbeddedSignup = () => {
     setError("");
@@ -249,7 +253,7 @@ export function WhatsAppConnection({
             {alreadyConnected && (
               <div className="mt-6 flex w-full flex-col gap-2">
                 <Button className="min-h-11" onClick={() => router.push(dashboardHref)}>Open WhatsApp Dashboard</Button>
-                <Button variant="ghost" className="min-h-11 text-destructive hover:text-destructive" onClick={() => setDisconnectOpen(true)}>Disconnect</Button>
+                <Button variant="ghost" className="min-h-11 text-destructive hover:text-destructive" disabled={!!stagingHref} onClick={() => setDisconnectOpen(true)}>Disconnect</Button>
               </div>
             )}
           </div>
@@ -261,9 +265,9 @@ export function WhatsAppConnection({
               <p className="mt-2 text-sm leading-6 text-muted-foreground">Link your business WhatsApp number to start using your inbox, automations and campaigns.</p>
             </div>
             {error && <p role="alert" className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />{error}</p>}
-            <Button className="min-h-11 w-full" disabled={busy} onClick={launchEmbeddedSignup}>
+            {stagingHref ? <Button asChild className="min-h-11 w-full"><a href={stagingHref}>Connect with Meta on staging</a></Button> : <Button className="min-h-11 w-full" disabled={busy} onClick={launchEmbeddedSignup}>
               {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Waiting for Meta…</> : sdkStatus === "loading" ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Loading Meta…</> : connectLabel}
-            </Button>
+            </Button>}
             <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
               <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               Meta securely handles business selection and WhatsApp number verification. Tany never sees your Meta password or access token.

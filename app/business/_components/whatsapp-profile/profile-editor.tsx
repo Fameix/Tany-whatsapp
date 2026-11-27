@@ -60,12 +60,24 @@ async function squareJpeg(file: File): Promise<Blob> {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function ProfileEditor({ businessId, initial, managerUrl }: { businessId: string; initial: ProfileSnapshot; managerUrl: string }) {
+const emptyProfile: BusinessProfile = { about: "", description: "", email: "", address: "", websites: [], vertical: "UNDEFINED", profilePictureUrl: "" };
+
+export function ProfileEditor({ businessId, initial, managerUrl, product, stagingHref, storedAccount }: {
+  businessId: string;
+  initial: ProfileSnapshot | null;
+  managerUrl?: string;
+  product?: string;
+  stagingHref?: string;
+  storedAccount?: { displayName: string; phone: string | null; status: string };
+}) {
   // Meta is the source of truth: every save, upload or refresh replaces this with Meta's latest read.
   const [snapshot, setSnapshot] = useState(initial);
-  const saved = snapshot.profile;
-  const { displayName, diagnostics } = snapshot;
-  const [draft, setDraft] = useState<EditableProfile>(() => editable(initial.profile));
+  const saved = snapshot?.profile ?? emptyProfile;
+  const displayName = snapshot?.displayName ?? { name: storedAccount?.displayName ?? "", phone: storedAccount?.phone ?? "", status: "unknown" as const, quality: "unknown" as const };
+  const diagnostics = snapshot?.diagnostics;
+  const [draft, setDraft] = useState<EditableProfile>(() => editable(initial?.profile ?? emptyProfile));
+  const readOnly = !snapshot || !!stagingHref;
+  const connectionStatus = snapshot ? "Connected" : storedAccount?.status ?? "Not available";
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -84,12 +96,12 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
     setMessage({ tone: "ok", text });
   };
   const save = () => startTransition(async () => {
-    const result = await saveBusinessProfile(businessId, draft);
+    const result = await saveBusinessProfile(businessId, draft, product);
     if (result.ok) accept(result.snapshot, result.message); else setMessage({ tone: "error", text: result.message });
   });
   const refresh = () => startTransition(async () => {
     setRefreshing(true);
-    const result = await refreshBusinessProfile(businessId);
+    const result = await refreshBusinessProfile(businessId, product);
     setRefreshing(false);
     if (!result.ok) return setMessage({ tone: "error", text: result.message });
     // Meta's fresh read replaces everything shown; unsaved edits are kept only if there are some.
@@ -116,7 +128,7 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
     setPictureStep("uploading");
     const form = new FormData();
     form.append("picture", new File([picture.blob], "profile.jpg", { type: "image/jpeg" }));
-    const result = await uploadProfilePicture(businessId, form);
+    const result = await uploadProfilePicture(businessId, form, product);
     setPictureStep("");
     if (result.ok) { URL.revokeObjectURL(picture.url); setPicture(null); accept(result.snapshot, result.message); }
     else setMessage({ tone: "error", text: result.message });
@@ -131,13 +143,13 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
           <p className="mt-1 text-sm text-muted-foreground">Manage how your business appears to customers on WhatsApp.</p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" onClick={refresh} disabled={pending}>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={pending || readOnly}>
             {refreshing ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
             Refresh from Meta
           </Button>
-          <a href={managerUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors hover:bg-muted">
-            Open in WhatsApp Manager<ExternalLink className="size-3.5" aria-hidden="true" />
-          </a>
+          {(stagingHref || managerUrl) && <a href={stagingHref ?? managerUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors hover:bg-muted">
+            {stagingHref ? "Open profile on staging" : "Open in WhatsApp Manager"}<ExternalLink className="size-3.5" aria-hidden="true" />
+          </a>}
         </div>
       </div>
 
@@ -149,12 +161,14 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-semibold">{displayName.name || "Display name not set"}</p>
           <p className="truncate text-sm text-muted-foreground tabular-nums">{displayName.phone}</p>
-          <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><StatusDot tone="success" />Connected</p>
+          <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><StatusDot tone={connectionStatus === "Connected" ? "success" : "neutral"} />{connectionStatus}</p>
         </div>
       </div>
 
       {message && <p role={message.tone === "error" ? "alert" : "status"} className={cn("rounded-lg px-4 py-3 text-sm", message.tone === "error" ? "bg-primary/8 text-primary" : "bg-emerald-500/10 text-emerald-800")}>{message.text}</p>}
+      {stagingHref && <p className="text-sm text-muted-foreground">Profile details and updates require staging. The fields below are a read-only preview.</p>}
 
+      <fieldset disabled={readOnly} className="contents">
       <Section title="Business details">
         <Field label="About" hint="Short status shown under your name." count={[draft.about.length, profileLimits.about]}>
           <Input value={draft.about} maxLength={profileLimits.about + 20} onChange={e => update({ about: e.target.value })} aria-invalid={!!issueFor("about")} />
@@ -205,6 +219,7 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
         {picture && <p className="text-xs text-muted-foreground">Preview only. Your WhatsApp picture changes after you choose &ldquo;Use this picture&rdquo;.</p>}
       </Section>
 
+      </fieldset>
       <Section title="Display name" description="The name customers see on WhatsApp. Meta reviews it; Tany shows Meta's current record.">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -240,7 +255,7 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
                 {item.complete ? <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" /> : <Circle className="size-4 text-muted-foreground" aria-hidden="true" />}
                 {item.label}
               </span>
-              <span className={cn("text-xs font-medium", item.complete ? "text-emerald-700" : "text-muted-foreground")}>{item.complete ? "Complete" : "Missing"}</span>
+              <span className={cn("text-xs font-medium", item.complete ? "text-emerald-700" : "text-muted-foreground")}>{!snapshot ? "Not loaded" : item.complete ? "Complete" : "Missing"}</span>
             </li>
           ))}
         </ul>
@@ -248,16 +263,16 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
 
       <Section title="Connection details">
         <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-          <div><dt className="text-xs text-muted-foreground">Connection</dt><dd className="mt-0.5 flex items-center gap-2 font-medium"><StatusDot tone="success" />Connected</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Connection</dt><dd className="mt-0.5 flex items-center gap-2 font-medium"><StatusDot tone={connectionStatus === "Connected" ? "success" : "neutral"} />{connectionStatus}</dd></div>
           <div><dt className="text-xs text-muted-foreground">Phone quality</dt><dd className="mt-0.5 font-medium">{qualityLabel[displayName.quality]}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Profile completeness</dt><dd className="mt-0.5 font-medium tabular-nums">{profileChecklist(saved).filter(item => item.complete).length} of {profileChecklist(saved).length}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Last refreshed from Meta</dt><dd className="mt-0.5 font-medium tabular-nums">{refreshedAt(diagnostics.refreshedAt)}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Profile completeness</dt><dd className="mt-0.5 font-medium tabular-nums">{snapshot ? `${profileChecklist(saved).filter(item => item.complete).length} of ${profileChecklist(saved).length}` : "Not loaded"}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Last refreshed from Meta</dt><dd className="mt-0.5 font-medium tabular-nums">{diagnostics ? refreshedAt(diagnostics.refreshedAt) : "Not loaded"}</dd></div>
         </dl>
         <details className="group rounded-lg bg-muted/40 px-3 py-2">
           <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-muted-foreground">Advanced details<ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden="true" /></summary>
           <dl className="mt-2 grid gap-2 text-xs">
-            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Phone number ID</dt><dd className="font-mono">{diagnostics.phoneNumberId}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">WhatsApp Business Account ID</dt><dd className="font-mono">{diagnostics.wabaId || "—"}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Phone number ID</dt><dd className="font-mono">{diagnostics?.phoneNumberId || "—"}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">WhatsApp Business Account ID</dt><dd className="font-mono">{diagnostics?.wabaId || "—"}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Display phone number</dt><dd className="font-mono">{displayName.phone || "—"}</dd></div>
           </dl>
         </details>
@@ -266,7 +281,7 @@ export function ProfileEditor({ businessId, initial, managerUrl }: { businessId:
       <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 px-4 py-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">
         <div className="mx-auto flex max-w-3xl items-center justify-end gap-3">
           {issues.length > 0 && dirty && <p className="mr-auto line-clamp-1 text-xs text-primary">{issues[0].message}</p>}
-          <Button onClick={save} disabled={pending || !dirty || issues.length > 0}>
+          <Button onClick={save} disabled={readOnly || pending || !dirty || issues.length > 0}>
             {pending && pictureStep === "" && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
             Save changes
           </Button>

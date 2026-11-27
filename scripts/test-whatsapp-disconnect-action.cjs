@@ -66,7 +66,7 @@ async function main() {
   // Component wiring: confirm -> disconnect(); success -> Not connected + refresh; failure -> alert in dialog.
   const component = fs.readFileSync("app/dashboard/messaging/_components/whatsapp-account-actions.tsx", "utf8");
   assert.match(component, /<AlertDialogAction disabled=\{pending\} onClick=\{\(event\) => \{ event\.preventDefault\(\); void disconnect\(\); \}\}>/, "confirm button triggers disconnect");
-  assert.match(component, /const result = await requestWhatsAppDisconnect\(businessId\);/);
+  assert.match(component, /const result = await requestWhatsAppDisconnect\(businessId, fetch, disconnectEndpoint\);/);
   const success = component.slice(component.indexOf("if (!result.ok)"), component.indexOf("router.refresh();") + "router.refresh();".length);
   for (const step of ['setDisconnectError(result.message);', 'return;', 'setStatus("Not connected");', "setHasConfiguredPhone(false);", "setConfirmOpen(false);", "router.refresh();"])
     assert.ok(success.includes(step), `disconnect flow includes ${step}`);
@@ -74,11 +74,14 @@ async function main() {
   const dialog = component.slice(component.indexOf("<AlertDialogContent>"), component.indexOf("</AlertDialogContent>"));
   assert.match(dialog, /\{disconnectError && <p role="alert"/, "backend failure is shown inside the open dialog");
   assert.match(component, /status\.includes\("unverified"\) \? "Continue setup" : status === "Error" \|\| status === "Disconnected" \? "Reconnect WhatsApp" : "Connect WhatsApp"/);
-  assert.match(component, /!connected && <Button/, "Not connected shows the Connect WhatsApp CTA");
+  assert.match(component, /!connected && \(stagingHref/, "Not connected shows the Connect WhatsApp CTA");
   const setupScreen = fs.readFileSync("app/dashboard/messaging/_components/whatsapp-connection.tsx", "utf8");
   assert.match(setupScreen, /\/api\/dashboard\/whatsapp-connection\?businessId=\$\{encodeURIComponent\(businessId\)\}/, "setup-page disconnect also names the business");
-  // After a disconnect the phone is cleared, so the directory projection reports "Not connected".
-  assert.match(fs.readFileSync("lib/admin/postgres-directory.ts", "utf8"), /configured \? "Configured · unverified" : "Not connected"/);
+  // Explicit disconnect survives the phone and mapping being cleared.
+  assert.match(fs.readFileSync("lib/admin/postgres-directory.ts", "utf8"), /postgresWhatsAppStatus/);
+  const status = fs.readFileSync("lib/admin/postgres-whatsapp-status.ts", "utf8");
+  assert.match(status, /when a\.status = 'disconnected' then 'Disconnected'/);
+  assert.match(status, /m\.whatsapp_account_id = a\.id/);
   console.log("PASS disconnect UI: confirm triggers the API, success shows Not connected + refreshes, failure stays in the dialog with the error");
 }
 
