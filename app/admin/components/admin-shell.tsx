@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { AdminBusiness } from "@/lib/admin/types";
-import { adminProductFromPath, adminProductPath } from "@/lib/admin/product-routes";
+import { adminProductFromPath, adminProductPath, stagingBootstrapAttemptParam } from "@/lib/admin/product-routes";
 import { productNavigation, type ProductSection } from "@/lib/admin/product-navigation";
 import type { TanyProduct } from "@/lib/messaging/vertical-config";
 import { BrandLogo } from "@/components/brand-logo";
@@ -287,6 +287,13 @@ export function AdminShell({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
+  useEffect(() => {
+    if (business) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(stagingBootstrapAttemptParam)) return;
+    url.searchParams.delete(stagingBootstrapAttemptParam);
+    window.history.replaceState(window.history.state, "", url);
+  }, [business, pathname]);
   const navigate = (href: string) => {
     setCommandOpen(false);
     router.push(href);

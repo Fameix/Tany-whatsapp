@@ -15,6 +15,7 @@
   "vars": {
     "MESSAGING_DATABASE": "postgres",
     "MESSAGING_POSTGRES_TARGET": "staging",
+    "TANY_DEPLOYMENT_ENV": "staging",
     "WHATSAPP_TOKEN_SECRET_PROJECT": "tany-whatsapp",
     "WHATSAPP_SETUP_LIVE_TESTS": "true",
     "WHATSAPP_SETUP_ALLOW_MANUAL_TEST": "false",

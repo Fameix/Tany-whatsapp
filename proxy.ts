@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signIntegrationAccess } from "@/lib/integration/access";
 import { resolveDashboardSession } from "@/lib/admin/dashboard-access";
+import { bootstrapStagingSuperAdmin } from "@/lib/admin/staging-admin-bootstrap";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
 import { businessSetupRouteBusinessId, businessSetupRouteHeader, resolveWhatsAppSetupAccess } from "@/lib/admin/whatsapp-setup-access";
@@ -14,6 +15,10 @@ export async function proxy(request: NextRequest) {
   const hostname = request.nextUrl.hostname;
   const localStaging = isLocalStaging(hostname) && isLocalStaging(request.headers.get("host") ?? hostname);
   const [, area, businessId] = request.nextUrl.pathname.split("/");
+  if (area === "admin") {
+    const bootstrap = await bootstrapStagingSuperAdmin(request);
+    if (bootstrap) return bootstrap;
+  }
   // The route trees own authorization. Only business routes use setup handoffs,
   // and /dashboard keeps its existing session or normal phone sign-in.
   const setupBusiness = area === "business"
@@ -26,7 +31,7 @@ export async function proxy(request: NextRequest) {
     const secret = process.env.MESSAGING_SERVICE_SECRET ?? "";
     const token = request.cookies.get("tany-dashboard-dev")?.value ?? "";
     const valid = !!token && !token.startsWith("otp_") && (await resolveDashboardSession(secret, token)) !== null;
-    const scope = area === "admin" ? { kind: "directory" as const }
+    const scope = area === "admin" && process.env.TANY_DEPLOYMENT_ENV !== "production" ? { kind: "directory" as const }
       : area === "business" && isProductTestBusiness(businessId) ? { kind: "business" as const, businessId } : null;
     if (scope && !valid && !token.startsWith("otp_") && secret.length >= 32) {
       credential = await signIntegrationAccess(secret, scope, Date.now(), "tany-dashboard-v1", localCookieOptions.maxAge);
@@ -57,6 +62,7 @@ async function productTestEntryRedirect(request: NextRequest) {
     request.cookies.get(dashboardSessionCookieName)?.value ?? "",
     request.cookies.get(whatsappSetupSessionCookieName)?.value ?? "",
     businessId,
+    request.headers.get("host") ?? nextUrl.host,
   );
   if (access.ok || access.reason !== "unauthenticated") return null;
   const response = NextResponse.redirect(new URL(entryPath, nextUrl.origin), 307);

@@ -18,6 +18,22 @@ export function isConfirmedStagingDatabase(env = process.env) {
   }
 }
 
+export function isStagingWorker(env = process.env) {
+  return env.TANY_DEPLOYMENT_ENV === "staging" &&
+    globalThis.navigator?.userAgent === "Cloudflare-Workers" &&
+    isConfirmedStagingDatabase(env);
+}
+
+export function isStagingWorkerHost(host: string | null) {
+  return host?.toLowerCase() === stagingHost;
+}
+
+export function isStagingWorkerOrigin(url: URL, host: string | null) {
+  return url.origin === "https://" + stagingHost &&
+    (host === null || isStagingWorkerHost(host)) &&
+    isStagingWorker();
+}
+
 function hostname(host: string | null) {
   return host?.toLowerCase().replace(/:\d+$/, "") ?? "";
 }

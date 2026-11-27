@@ -15,8 +15,9 @@ export async function resolveWhatsAppSetupAccess(
   dashboardToken: string,
   setupToken: string,
   businessId: string,
+  requestHost?: string,
 ): Promise<WhatsAppSetupAccess> {
-  const session = await resolveDashboardSession(secret, dashboardToken);
+  const session = await resolveDashboardSession(secret, dashboardToken, requestHost);
   if (session?.role === "business")
     return session.businessId === businessId ? { ok: true, via: "business-session" } : { ok: false, reason: "wrong-business" };
   if (setupToken && await verifyWhatsAppSetupSession(secret, setupToken, businessId)) return { ok: true, via: "setup-session" };

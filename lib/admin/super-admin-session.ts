@@ -1,20 +1,14 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { verifyIntegrationAccess } from "@/lib/integration/access";
+import { verifyDirectorySession } from "./directory-session";
 import { dashboardSessionCookieName } from "./dashboard-cookie";
 import { DashboardAuthorizationError } from "./dashboard-session";
 
-/** Super Admin uses only the signed gateway directory assertion. */
+/** Super Admin uses a verified directory session. */
 export const isSuperAdmin = cache(async () => {
   const token = (await cookies()).get(dashboardSessionCookieName)?.value ?? "";
-  return verifyIntegrationAccess(
-    process.env.MESSAGING_SERVICE_SECRET ?? "",
-    token,
-    { kind: "directory" },
-    Date.now(),
-    "tany-dashboard-v1",
-  );
+  return verifyDirectorySession(process.env.MESSAGING_SERVICE_SECRET ?? "", token);
 });
 
 export async function requireSuperAdmin() {
