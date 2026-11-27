@@ -15,7 +15,7 @@ import { WorkspaceRootProvider } from "@/app/business/_components/workspace-root
 import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
 import { isSuperAdmin } from "@/lib/admin/super-admin-session";
 import { isWorkspaceAlias, workspaceDisplayName, workspaceRoot } from "@/lib/admin/workspace-root";
-import { BrandLogo } from "@/components/brand-logo";
+import { AdminProductMenu } from "@/app/admin/components/control-center/product-selector";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
@@ -82,14 +82,9 @@ async function WorkspaceLayout({
       businessProduct={product}
       workspaceRoot={root}
       workspaceSwitcher={alias ? (
-        // Super Admin → Tany Retail is the product's own workspace: no business switcher, no back link.
-        <div className="flex min-h-11 w-full items-center gap-3 px-2 py-2">
-          <BrandLogo vertical={business.vertical} decorative />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-medium">{shellBusiness.name}</span>
-            <span className="block truncate text-[11px] text-muted-foreground">Super Admin</span>
-          </span>
-        </div>
+        // Super Admin → Tany Retail is the product's own workspace: the same product selector as
+        // every Super Admin product page (Tany Retail selected), no business switcher, no back link.
+        <AdminProductMenu />
       ) : <>
         <WorkspaceMenu business={shellBusiness} product={product} products={products} />
         {access === "admin" && <Link href={adminProductPath(product ?? business.vertical)} className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted">Back to product admin</Link>}

@@ -67,6 +67,7 @@ async function main() {
   assert.match(layout, /if \(alias && !\(await isSuperAdmin\(\)\)\) return <SuperAdminSignInRequired \/>;/, "the alias layout re-checks Super Admin");
   assert.match(layout, /<WorkspaceRootProvider businessId=\{businessId\} root=\{root\}>/);
   assert.doesNotMatch(layout, /Back to Super Admin/, "Tany Retail is the product's own workspace: no back link");
+  assert.match(layout, /<AdminProductMenu \/>/, "Tany Retail has the same product selector as Motos and Eats");
   assert.match(layout, /name: await workspaceDisplayName\(business\)/, "the shell shows the product name, not the staging business");
   assert.match(fs.readFileSync("lib/admin/workspace-root.ts", "utf8"), /\(await isWorkspaceAlias\(\)\) \? verticalConfig\[business\.vertical\]\.label : business\.name/);
   assert.doesNotMatch(fs.readFileSync("app/business/_components/retail-admin-links.tsx", "utf8"), /href: "\/admin"/, "Settings has no back-to-Super-Admin row");
