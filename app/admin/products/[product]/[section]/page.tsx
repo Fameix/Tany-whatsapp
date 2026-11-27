@@ -55,7 +55,7 @@ async function ProductSectionPage({ params, searchParams }: Props) {
   const { directory } = await getOperationalOverview(live, { includeTestData });
   return <div className="space-y-4">
     <PageHeader title={label} description={`Business workspaces for ${product.name}.`} />
-    {directory.length ? <BusinessTable businesses={directory} showProduct={false} openLabel="Open workspace" primaryWorkspace />
+    {directory.length ? <BusinessTable businesses={directory} showProduct={false} openLabel="Open workspace" primaryWorkspace layout="list" />
       : <EmptyPanel title="No businesses yet" detail="Business workspaces will appear here as they are added to this product." />}
   </div>;
 }

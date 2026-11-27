@@ -6,6 +6,7 @@ import { cn } from "cn";
 import type { ProductBusiness } from "@/lib/admin/product-center";
 import { tenantKindLabel } from "@/lib/admin/tenant-classification";
 import { verticalConfig } from "@/lib/messaging/vertical-config";
+import { Initials } from "@/app/business/_components/home/home-primitives";
 
 export const surface = "rounded-xl bg-card shadow-[0_1px_2px_rgb(9_9_11/0.05),0_0_0_1px_rgb(9_9_11/0.06)]";
 
@@ -42,7 +43,34 @@ export const shortDate = (iso: string | null) => (iso ? new Intl.DateTimeFormat(
 /** Compact business rows; columns collapse on small screens. */
 type BusinessTableRow = Pick<ProductBusiness, "id" | "name" | "product" | "kind" | "active" | "whatsapp" | "createdAt" | "lastActivity">;
 
-export function BusinessTable<T extends BusinessTableRow>({ businesses, showKind = false, showProduct = true, openLabel = "Open", primaryWorkspace = false, actions }: { businesses: T[]; showKind?: boolean; showProduct?: boolean; openLabel?: string; primaryWorkspace?: boolean; actions?: (business: T) => ReactNode }) {
+export function BusinessTable<T extends BusinessTableRow>({ businesses, showKind = false, showProduct = true, openLabel = "Open", primaryWorkspace = false, actions, layout = "table" }: { businesses: T[]; showKind?: boolean; showProduct?: boolean; openLabel?: string; primaryWorkspace?: boolean; actions?: (business: T) => ReactNode; layout?: "table" | "list" }) {
+  // Product dashboards use the same simple rows as a business's Home.
+  if (layout === "list")
+    return (
+      <ul className={cn(surface, "flex flex-col px-2 py-2 sm:px-4")}>
+        {businesses.map(business => (
+          <li key={business.id} className="flex items-center gap-4 rounded-lg px-2 py-3">
+            <Initials name={business.name} />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 truncate text-sm font-medium">
+                <span className="truncate">{business.name}</span>
+                {business.kind !== "live" && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{tenantKindLabel[business.kind]}</span>}
+                {!business.active && <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Inactive</span>}
+              </p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <WhatsAppState state={business.whatsapp} />
+                {showProduct && business.product && <span>{verticalConfig[business.product].label}</span>}
+                <span className="tabular-nums">{business.lastActivity ? `Last activity ${shortDate(business.lastActivity)}` : "No activity yet"}</span>
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Link href={businessWorkspacePath(business.id)} className={cn(buttonVariants({ variant: primaryWorkspace ? "default" : "ghost", size: "sm" }), "whitespace-nowrap")}>{openLabel}</Link>
+              {actions?.(business)}
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
   return (
     <div className={cn(surface, "overflow-hidden")}>
       <table className="w-full text-left text-sm">

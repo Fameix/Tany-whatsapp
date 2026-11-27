@@ -21,10 +21,8 @@ function main() {
 
   const switcher = source("app/business/[businessId]/layout.tsx");
   assert.match(switcher, /requireDashboardAccess\(businessId\)/);
-  assert.match(switcher, /workspaceProductContext\(businessId\)/);
-  assert.match(switcher, /<WorkspaceMenu business=\{shellBusiness\} product=\{product\} products=\{products\}/);
-  assert.match(switcher, /access === "admin"[\s\S]*?Back to product admin/);
-  assert.doesNotMatch(switcher, /listBusinessProfiles/);
+  assert.match(switcher, /hasWorkspaceEntitlement\(businessId\)/);
+  assert.doesNotMatch(switcher, /WorkspaceMenu|AdminProductMenu|businessProduct|listBusinessProfiles/);
   const adminLayout = source("app/admin/layout.tsx");
   assert.match(adminLayout, /<AdminProductMenu\s*\/>/);
   assert.doesNotMatch(adminLayout, /<WorkspaceSwitcher\s*\/>/);
@@ -35,10 +33,11 @@ function main() {
   assert.match(productSelector, /Search products/);
   assert.doesNotMatch(productSelector, /listBusinessProfiles|WorkspaceOption|\/business\//);
 
-  const menu = source("app/admin/components/workspace-menu.tsx");
-  assert.match(menu, /products\.map/);
-  assert.match(menu, /products\.length < 2/);
-  assert.doesNotMatch(menu, /Coming Soon|Super Admin|\/admin\/products|\bObject\.values\b/);
+  const shell = source("app/admin/components/admin-shell.tsx");
+  const clientNav = shell.slice(shell.indexOf("function businessNavigation"), shell.indexOf("const businessPageLabels"));
+  assert.deepEqual([...clientNav.matchAll(/label: "([^"]+)"/g)].map(match => match[1]),
+    ["Home", "Inbox", "Customers", "Automations", "Campaigns", "Templates", "WhatsApp", "Settings"]);
+  assert.doesNotMatch(shell, /Product tools|businessProduct/);
 
   const businessLoader = source("app/business/_components/load-business.ts");
   assert.match(businessLoader, /isActiveTanyVertical\(business\.vertical\)/);
