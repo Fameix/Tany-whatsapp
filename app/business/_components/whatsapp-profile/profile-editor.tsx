@@ -1,13 +1,14 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Camera, ExternalLink, LoaderCircle } from "lucide-react";
+import { Camera, CheckCircle2, ChevronDown, Circle, ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/app/business/_components/home/home-primitives";
-import { pictureLimits, profileLimits, profileVerticals, validateProfile, type BusinessProfile, type DisplayName, type EditableProfile } from "@/lib/whatsapp/business-profile-model";
-import { saveBusinessProfile, uploadProfilePicture } from "./actions";
+import { pictureLimits, profileChecklist, profileLimits, profileVerticals, validateProfile, type BusinessProfile, type EditableProfile } from "@/lib/whatsapp/business-profile-model";
+import type { ProfileSnapshot } from "@/lib/whatsapp/business-profile";
+import { refreshBusinessProfile, saveBusinessProfile, uploadProfilePicture } from "./actions";
 
 const surface = "rounded-xl bg-card shadow-[0_1px_2px_rgb(9_9_11/0.05),0_0_0_1px_rgb(9_9_11/0.06)]";
 const fieldClass = "w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
@@ -35,11 +36,14 @@ function Field({ label, hint, count, children }: { label: string; hint?: string;
 }
 
 const nameStatus = {
-  approved: { label: "Approved", className: "bg-emerald-500/10 text-emerald-800" },
-  pending: { label: "Pending review", className: "bg-amber-500/10 text-amber-800" },
-  rejected: { label: "Rejected", className: "bg-primary/10 text-primary" },
-  unknown: { label: "Unknown", className: "bg-muted text-muted-foreground" },
+  approved: { label: "Approved by Meta", className: "bg-emerald-500/10 text-emerald-800" },
+  pending: { label: "Under Meta review", className: "bg-amber-500/10 text-amber-800" },
+  rejected: { label: "Rejected by Meta", className: "bg-primary/10 text-primary" },
+  unknown: { label: "Status unknown", className: "bg-muted text-muted-foreground" },
 } as const;
+const qualityLabel = { high: "High", medium: "Medium", low: "Low", unknown: "Not reported" } as const;
+const editable = (profile: BusinessProfile): EditableProfile => ({ about: profile.about, description: profile.description, email: profile.email, address: profile.address, websites: profile.websites, vertical: profile.vertical });
+const refreshedAt = (iso: string) => new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }).format(new Date(iso));
 
 /** Center-crops to a square JPEG so WhatsApp shows the picture exactly as previewed. */
 async function squareJpeg(file: File): Promise<Blob> {
@@ -56,9 +60,13 @@ async function squareJpeg(file: File): Promise<Blob> {
   } finally { URL.revokeObjectURL(url); }
 }
 
-export function ProfileEditor({ businessId, initial, displayName, managerUrl }: { businessId: string; initial: BusinessProfile; displayName: DisplayName; managerUrl: string }) {
-  const [saved, setSaved] = useState(initial);
-  const [draft, setDraft] = useState<EditableProfile>(() => ({ about: initial.about, description: initial.description, email: initial.email, address: initial.address, websites: initial.websites, vertical: initial.vertical }));
+export function ProfileEditor({ businessId, initial, managerUrl }: { businessId: string; initial: ProfileSnapshot; managerUrl: string }) {
+  // Meta is the source of truth: every save, upload or refresh replaces this with Meta's latest read.
+  const [snapshot, setSnapshot] = useState(initial);
+  const saved = snapshot.profile;
+  const { displayName, diagnostics } = snapshot;
+  const [draft, setDraft] = useState<EditableProfile>(() => editable(initial.profile));
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const [picture, setPicture] = useState<{ blob: Blob; url: string } | null>(null);
@@ -70,14 +78,24 @@ export function ProfileEditor({ businessId, initial, displayName, managerUrl }: 
   const update = (patch: Partial<EditableProfile>) => { setDraft(current => ({ ...current, ...patch })); setMessage(null); };
   const issueFor = (field: keyof EditableProfile) => issues.find(issue => issue.field === field)?.message;
 
-  const accept = (profile: BusinessProfile, text: string) => {
-    setSaved(profile);
-    setDraft({ about: profile.about, description: profile.description, email: profile.email, address: profile.address, websites: profile.websites, vertical: profile.vertical });
+  const accept = (next: ProfileSnapshot, text: string) => {
+    setSnapshot(next);
+    setDraft(editable(next.profile));
     setMessage({ tone: "ok", text });
   };
   const save = () => startTransition(async () => {
     const result = await saveBusinessProfile(businessId, draft);
-    if (result.ok) accept(result.profile, result.message); else setMessage({ tone: "error", text: result.message });
+    if (result.ok) accept(result.snapshot, result.message); else setMessage({ tone: "error", text: result.message });
+  });
+  const refresh = () => startTransition(async () => {
+    setRefreshing(true);
+    const result = await refreshBusinessProfile(businessId);
+    setRefreshing(false);
+    if (!result.ok) return setMessage({ tone: "error", text: result.message });
+    // Meta's fresh read replaces everything shown; unsaved edits are kept only if there are some.
+    setSnapshot(result.snapshot);
+    if (!dirty) setDraft(editable(result.snapshot.profile));
+    setMessage({ tone: "ok", text: result.message });
   });
   const choose = async (file: File | undefined) => {
     if (!file) return;
@@ -100,16 +118,27 @@ export function ProfileEditor({ businessId, initial, displayName, managerUrl }: 
     form.append("picture", new File([picture.blob], "profile.jpg", { type: "image/jpeg" }));
     const result = await uploadProfilePicture(businessId, form);
     setPictureStep("");
-    if (result.ok) { URL.revokeObjectURL(picture.url); setPicture(null); accept(result.profile, result.message); }
+    if (result.ok) { URL.revokeObjectURL(picture.url); setPicture(null); accept(result.snapshot, result.message); }
     else setMessage({ tone: "error", text: result.message });
   });
 
   const avatar = picture?.url ?? saved.profilePictureUrl;
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-24">
-      <div className="pt-2">
-        <h1 className="text-2xl font-semibold tracking-tight">WhatsApp Business Profile</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Manage how your business appears to customers on WhatsApp.</p>
+      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">WhatsApp Business Profile</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage how your business appears to customers on WhatsApp.</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" onClick={refresh} disabled={pending}>
+            {refreshing ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
+            Refresh from Meta
+          </Button>
+          <a href={managerUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors hover:bg-muted">
+            Open in WhatsApp Manager<ExternalLink className="size-3.5" aria-hidden="true" />
+          </a>
+        </div>
       </div>
 
       <div className={cn(surface, "flex items-center gap-4 p-4 sm:p-6")}>
@@ -176,17 +205,62 @@ export function ProfileEditor({ businessId, initial, displayName, managerUrl }: 
         {picture && <p className="text-xs text-muted-foreground">Preview only. Your WhatsApp picture changes after you choose &ldquo;Use this picture&rdquo;.</p>}
       </Section>
 
-      <Section title="Display name" description="The name customers see on WhatsApp.">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <Section title="Display name" description="The name customers see on WhatsApp. Meta reviews it; Tany shows Meta's current record.">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{displayName.name || "Not set"}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Display name changes are reviewed by Meta.</p>
+            <p className="text-xs text-muted-foreground">Display name</p>
+            <p className="truncate text-base font-semibold">{displayName.name || "Not set"}</p>
           </div>
-          <span className={cn("inline-flex h-6 items-center rounded-full px-2 text-[11px] font-medium", nameStatus[displayName.status].className)}>{nameStatus[displayName.status].label}</span>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Meta review status</p>
+            <span className={cn("mt-1 inline-flex h-6 items-center rounded-full px-2 text-[11px] font-medium", nameStatus[displayName.status].className)}>{nameStatus[displayName.status].label}</span>
+          </div>
         </div>
-        <a href={managerUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 self-start text-xs font-medium text-primary hover:underline">
-          Request a name change in WhatsApp Manager<ExternalLink className="size-3.5" aria-hidden="true" />
-        </a>
+        <p className="text-xs leading-5 text-muted-foreground">
+          {displayName.status === "pending" ? "Meta is reviewing your display name. Customers see your current name or number until Meta finishes."
+            : displayName.status === "rejected" ? "Meta rejected this display name. Meta doesn't return the reason through the API; open WhatsApp Manager to see it and request a new name."
+              : displayName.status === "unknown" ? "Meta didn't report a review status for this number. Check WhatsApp Manager for details."
+                : "Display name changes are reviewed by Meta. To change it, request a new name in WhatsApp Manager."}
+        </p>
+      </Section>
+
+      <Section title="Customer visibility" description="What customers may see when you message them.">
+        <p className="text-sm leading-6">Meta approval does not always mean the display name appears immediately to every WhatsApp user. Some customers may temporarily see your phone number instead.</p>
+        {displayName.status === "approved" && (
+          <p className="rounded-lg bg-emerald-500/5 px-3 py-2 text-xs leading-5 text-emerald-900">Your display name is approved. WhatsApp may still show your phone number to some users while Meta propagates or applies the business identity across clients.</p>
+        )}
+        <p className="text-xs text-muted-foreground">Tany can&rsquo;t change how WhatsApp apps display your name.</p>
+      </Section>
+
+      <Section title="Profile completeness" description="Separate from display-name approval.">
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {profileChecklist(saved).map(item => (
+            <li key={item.label} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+              <span className="flex items-center gap-2">
+                {item.complete ? <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" /> : <Circle className="size-4 text-muted-foreground" aria-hidden="true" />}
+                {item.label}
+              </span>
+              <span className={cn("text-xs font-medium", item.complete ? "text-emerald-700" : "text-muted-foreground")}>{item.complete ? "Complete" : "Missing"}</span>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      <Section title="Connection details">
+        <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <div><dt className="text-xs text-muted-foreground">Connection</dt><dd className="mt-0.5 flex items-center gap-2 font-medium"><StatusDot tone="success" />Connected</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Phone quality</dt><dd className="mt-0.5 font-medium">{qualityLabel[displayName.quality]}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Profile completeness</dt><dd className="mt-0.5 font-medium tabular-nums">{profileChecklist(saved).filter(item => item.complete).length} of {profileChecklist(saved).length}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Last refreshed from Meta</dt><dd className="mt-0.5 font-medium tabular-nums">{refreshedAt(diagnostics.refreshedAt)}</dd></div>
+        </dl>
+        <details className="group rounded-lg bg-muted/40 px-3 py-2">
+          <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-muted-foreground">Advanced details<ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden="true" /></summary>
+          <dl className="mt-2 grid gap-2 text-xs">
+            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Phone number ID</dt><dd className="font-mono">{diagnostics.phoneNumberId}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">WhatsApp Business Account ID</dt><dd className="font-mono">{diagnostics.wabaId || "—"}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Display phone number</dt><dd className="font-mono">{displayName.phone || "—"}</dd></div>
+          </dl>
+        </details>
       </Section>
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 px-4 py-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">

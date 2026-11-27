@@ -29,6 +29,7 @@ async function main() {
   let stored = { about: "Old about", description: "", email: "", address: "", websites: [], vertical: "UNDEFINED", profile_picture_url: "" };
   const calls = [];
   let failNext = null;
+  let phoneRecord = { verified_name: "Tany WB", display_phone_number: "+91 63814 17396", name_status: "APPROVED", quality_rating: "GREEN" };
   const graph = async (url, init = {}) => {
     const target = String(url);
     if (new URL(target).hostname.endsWith(".neon.tech")) return originalFetch(url, init);
@@ -36,7 +37,7 @@ async function main() {
     calls.push({ target, method: init.method ?? "GET", headers: init.headers ?? {}, body: init.body });
     if (failNext) { const error = failNext; failNext = null; return Response.json({ error }, { status: error.code === 190 ? 401 : 400 }); }
     if (target.includes("/whatsapp_business_profile?fields=")) return Response.json({ data: [{ messaging_product: "whatsapp", ...stored }] });
-    if (target.endsWith(`/${phoneNumberId}?fields=verified_name,display_phone_number,name_status`)) return Response.json({ verified_name: "Tany WB", display_phone_number: "+91 63814 17396", name_status: "APPROVED" });
+    if (target.endsWith(`/${phoneNumberId}?fields=verified_name,display_phone_number,name_status,quality_rating`)) return Response.json(phoneRecord);
     if (target.endsWith("/whatsapp_business_profile") && init.method === "POST") {
       const body = JSON.parse(init.body);
       assert.equal(body.messaging_product, "whatsapp");
@@ -53,7 +54,10 @@ async function main() {
     // Read.
     const read = await service.getBusinessProfile("test-retail");
     assert.equal(read.profile.about, "Old about");
-    assert.deepEqual(read.displayName, { name: "Tany WB", phone: "+91 63814 17396", status: "approved" });
+    assert.deepEqual(read.displayName, { name: "Tany WB", phone: "+91 63814 17396", status: "approved", quality: "high" });
+    assert.equal(read.diagnostics.phoneNumberId, phoneNumberId);
+    assert.ok(Date.parse(read.diagnostics.refreshedAt) > 0, "the read time is recorded");
+    assert.equal(JSON.stringify(read).includes(token), false, "the snapshot sent to the browser carries no token");
     assert.ok(calls.every(call => call.target.includes(`/${phoneNumberId}`)), "reads use this business's own phone number");
     assert.ok(calls.every(call => call.headers.Authorization === `Bearer ${token}`), "reads use this business's Secret Manager credential");
     console.log("PASS test-retail reads its profile and display-name status from its own phone number with its own credential");
@@ -126,12 +130,43 @@ async function main() {
 
     // Server actions always authorise the dashboard session for the named business first.
     const actions = fs.readFileSync("app/business/_components/whatsapp-profile/actions.ts", "utf8");
-    assert.equal((actions.match(/await requireDashboardAccess\(businessId\);/g) ?? []).length, 2, "both actions check dashboard access");
+    assert.equal((actions.match(/await requireDashboardAccess\(businessId\);/g) ?? []).length, (actions.match(/^export async function /gm) ?? []).length, "every action checks dashboard access");
     assert.ok(!/accessToken|tokenSecretName|Authorization/.test(fs.readFileSync("app/business/_components/whatsapp-profile/profile-editor.tsx", "utf8")), "the browser editor never handles credentials");
     const serviceSource = fs.readFileSync("lib/whatsapp/business-profile.ts", "utf8");
     assert.ok(serviceSource.includes('owner?.businessId !== businessId'), "phone ownership is confirmed against the business");
     assert.ok(!serviceSource.includes("META_ACCESS_TOKEN"), "no global Meta token");
     console.log("PASS actions authorise the business session; ownership checked; no global token; editor holds no credentials");
+
+    // Display-name status and quality come from Meta's phone-number record.
+    for (const [nameStatus, expected] of [["APPROVED", "approved"], ["AVAILABLE_WITHOUT_REVIEW", "approved"], ["PENDING_REVIEW", "pending"], ["DECLINED", "rejected"], ["EXPIRED", "rejected"], ["NONE", "unknown"], [undefined, "unknown"]])
+      assert.equal(model.displayNameStatus(nameStatus), expected, `${nameStatus} → ${expected}`);
+    for (const [rating, expected] of [["GREEN", "high"], ["YELLOW", "medium"], ["RED", "low"], [undefined, "unknown"]]) assert.equal(model.qualityRating(rating), expected);
+
+    // Refresh re-reads Meta every time; nothing is served from a previous read.
+    phoneRecord = { verified_name: "Tany WB", display_phone_number: "+91 63814 17396", name_status: "PENDING_REVIEW" };
+    const first = await service.getBusinessProfile("test-retail");
+    assert.equal(first.displayName.status, "pending", "pending renders from Meta");
+    assert.equal(first.displayName.quality, "unknown", "quality is Unknown when Meta doesn't report it");
+    phoneRecord = { ...phoneRecord, name_status: "DECLINED" };
+    stored = { about: "Only about", description: "", email: "", address: "", websites: [], vertical: "UNDEFINED", profile_picture_url: "" };
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const second = await service.getBusinessProfile("test-retail");
+    assert.equal(second.displayName.status, "rejected", "a fresh read reflects Meta's new status");
+    assert.ok(Date.parse(second.diagnostics.refreshedAt) > Date.parse(first.diagnostics.refreshedAt), "each refresh is a new Meta read");
+    assert.equal(second.displayName.name, "Tany WB", "the display name section works with optional profile fields missing");
+    assert.deepEqual(model.profileChecklist(second.profile).map(item => [item.label, item.complete]), [["Profile picture", false], ["About", true], ["Description", false], ["Category", false], ["Email", false], ["Website", false], ["Address", false]]);
+    const actionsSource = fs.readFileSync("app/business/_components/whatsapp-profile/actions.ts", "utf8");
+    assert.match(actionsSource, /export async function refreshBusinessProfile[\s\S]*?await requireDashboardAccess\(businessId\);[\s\S]*?getBusinessProfile\(businessId\)/, "refresh authorises the business session and reads Meta");
+    console.log("PASS display-name status (approved, pending, rejected, unknown) and quality map from Meta; refresh re-reads Meta; checklist works with fields missing");
+
+    const editor = fs.readFileSync("app/business/_components/whatsapp-profile/profile-editor.tsx", "utf8");
+    for (const copy of ["Approved by Meta", "Under Meta review", "Rejected by Meta", "Refresh from Meta", "Open in WhatsApp Manager", "Advanced details", "Customer visibility",
+      "Meta approval does not always mean the display name appears immediately to every WhatsApp user. Some customers may temporarily see your phone number instead.",
+      "Your display name is approved. WhatsApp may still show your phone number to some users while Meta propagates or applies the business identity across clients."])
+      assert.ok(editor.includes(copy), `editor shows "${copy.slice(0, 40)}…"`);
+    assert.equal(/Change display name|value=\{[^}]*displayName\.name/.test(editor), false, "no editable display-name field");
+    assert.equal(/setDisplayName|displayNameDraft/.test(editor), false, "display name is never edited or stored locally");
+    console.log("PASS profile page shows review status, customer-visibility guidance, advanced details and actions; no editable display name");
   } finally {
     globalThis.fetch = originalFetch;
     credentials.installWhatsAppSecretManagerAdapter(undefined);

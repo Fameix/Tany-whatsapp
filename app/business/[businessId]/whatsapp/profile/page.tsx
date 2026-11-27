@@ -41,9 +41,8 @@ async function Profile({ params }: Props) {
     if (result.code === "CREDENTIAL" || result.code === "PERMISSION") return <Unavailable title="Reconnect WhatsApp" detail={result.message} action={{ label: "Go to WhatsApp", href: whatsapp }} />;
     return <Unavailable title="Your profile couldn't be loaded" detail={result.message} />;
   }
-  const { profile, displayName, wabaId } = result;
-  const managerUrl = wabaId ? `https://business.facebook.com/wa/manage/phone-numbers/?waba_id=${encodeURIComponent(wabaId)}` : "https://business.facebook.com/wa/manage/home/";
-  return <ProfileEditor businessId={businessId} initial={profile} displayName={displayName} managerUrl={managerUrl} />;
+  const managerUrl = result.wabaId ? `https://business.facebook.com/wa/manage/phone-numbers/?waba_id=${encodeURIComponent(result.wabaId)}` : "https://business.facebook.com/wa/manage/home/";
+  return <ProfileEditor businessId={businessId} initial={result} managerUrl={managerUrl} />;
 }
 
 export default function Page(props: Props) {

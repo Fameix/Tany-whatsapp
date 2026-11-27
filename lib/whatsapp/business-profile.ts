@@ -2,8 +2,8 @@ import "server-only";
 import { runtimeRepositoryFor } from "@/lib/data/repository";
 import { accountAccessToken } from "@/lib/whatsapp/credentials";
 import {
-  displayNameStatus, profileVerticals, validatePicture, validateProfile,
-  type BusinessProfile, type DisplayName, type EditableProfile, type ProfileVertical,
+  displayNameStatus, profileVerticals, qualityRating, validatePicture, validateProfile,
+  type BusinessProfile, type DisplayName, type EditableProfile, type ProfileDiagnostics, type ProfileVertical,
 } from "./business-profile-model";
 
 export type ProfileErrorCode = "NOT_CONNECTED" | "CREDENTIAL" | "PERMISSION" | "INVALID" | "META_UNAVAILABLE";
@@ -50,11 +50,14 @@ async function graph<T>(fetcher: typeof fetch, url: string, token: string, init:
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const vertical = (value: unknown): ProfileVertical => (profileVerticals.some(([v]) => v === value) ? value as ProfileVertical : "UNDEFINED");
 
-export async function getBusinessProfile(businessId: string, { fetcher = fetch }: Dependencies = {}): Promise<{ profile: BusinessProfile; displayName: DisplayName; wabaId: string }> {
+export type ProfileSnapshot = { profile: BusinessProfile; displayName: DisplayName; diagnostics: ProfileDiagnostics; wabaId: string };
+
+/** One fresh read from Meta: profile fields, display name, review status and quality. */
+export async function getBusinessProfile(businessId: string, { fetcher = fetch }: Dependencies = {}): Promise<ProfileSnapshot> {
   const { phoneNumberId, token, wabaId } = await profileAccount(businessId);
   const [profileResult, phone] = await Promise.all([
     graph<{ data?: Array<Record<string, unknown>> }>(fetcher, `${graphRoot()}/${phoneNumberId}/whatsapp_business_profile?fields=${profileFields}`, token),
-    graph<{ verified_name?: string; display_phone_number?: string; name_status?: string }>(fetcher, `${graphRoot()}/${phoneNumberId}?fields=verified_name,display_phone_number,name_status`, token),
+    graph<{ verified_name?: string; display_phone_number?: string; name_status?: string; quality_rating?: string }>(fetcher, `${graphRoot()}/${phoneNumberId}?fields=verified_name,display_phone_number,name_status,quality_rating`, token),
   ]);
   const data = profileResult.data?.[0] ?? {};
   return {
@@ -63,7 +66,8 @@ export async function getBusinessProfile(businessId: string, { fetcher = fetch }
       websites: Array.isArray(data.websites) ? data.websites.filter((site): site is string => typeof site === "string") : [],
       vertical: vertical(data.vertical), profilePictureUrl: text(data.profile_picture_url),
     },
-    displayName: { name: text(phone.verified_name), phone: text(phone.display_phone_number), status: displayNameStatus(phone.name_status) },
+    displayName: { name: text(phone.verified_name), phone: text(phone.display_phone_number), status: displayNameStatus(phone.name_status), quality: qualityRating(phone.quality_rating) },
+    diagnostics: { phoneNumberId, wabaId, refreshedAt: new Date().toISOString() },
     wabaId,
   };
 }

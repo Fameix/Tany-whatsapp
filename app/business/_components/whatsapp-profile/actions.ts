@@ -2,10 +2,11 @@
 import { revalidatePath } from "next/cache";
 import { DashboardAuthorizationError, requireDashboardAccess } from "@/lib/admin/dashboard-session";
 import { loadBusiness } from "@/app/business/_components/load-business";
-import { BusinessProfileError, updateBusinessProfile, updateProfilePicture } from "@/lib/whatsapp/business-profile";
-import type { BusinessProfile, EditableProfile } from "@/lib/whatsapp/business-profile-model";
+import { BusinessProfileError, getBusinessProfile, updateBusinessProfile, updateProfilePicture, type ProfileSnapshot } from "@/lib/whatsapp/business-profile";
+import type { EditableProfile } from "@/lib/whatsapp/business-profile-model";
 
-export type ProfileActionResult = { ok: true; profile: BusinessProfile; message: string } | { ok: false; message: string };
+/** The snapshot never carries credentials: profile fields, display name, status and Meta IDs only. */
+export type ProfileActionResult = { ok: true; snapshot: ProfileSnapshot; message: string } | { ok: false; message: string };
 
 function failure(error: unknown): ProfileActionResult {
   if (error instanceof DashboardAuthorizationError) return { ok: false, message: "You don't have access to this business." };
@@ -26,9 +27,9 @@ export async function saveBusinessProfile(businessId: string, input: unknown): P
       websites: Array.isArray(value.websites) ? value.websites.slice(0, 3).map(site => str(site, 300).trim()).filter(Boolean) : [],
       vertical: str(value.vertical, 40) as EditableProfile["vertical"],
     };
-    const { profile: saved } = await updateBusinessProfile(businessId, profile);
+    const snapshot = await updateBusinessProfile(businessId, profile);
     revalidatePath(`/business/${encodeURIComponent(businessId)}/whatsapp`, "layout");
-    return { ok: true, profile: saved, message: "Saved. WhatsApp is showing your updated profile." };
+    return { ok: true, snapshot, message: "Saved. WhatsApp is showing your updated profile." };
   } catch (error) { return failure(error); }
 }
 
@@ -38,8 +39,17 @@ export async function uploadProfilePicture(businessId: string, form: FormData): 
     await loadBusiness(businessId);
     const file = form.get("picture");
     if (!(file instanceof Blob)) return { ok: false, message: "Choose an image." };
-    const { profile } = await updateProfilePicture(businessId, new Uint8Array(await file.arrayBuffer()), file.type);
+    const snapshot = await updateProfilePicture(businessId, new Uint8Array(await file.arrayBuffer()), file.type);
     revalidatePath(`/business/${encodeURIComponent(businessId)}/whatsapp`, "layout");
-    return { ok: true, profile, message: "Profile picture updated." };
+    return { ok: true, snapshot, message: "Profile picture updated." };
+  } catch (error) { return failure(error); }
+}
+
+/** Re-reads everything from Meta; nothing is served from a local copy. */
+export async function refreshBusinessProfile(businessId: string): Promise<ProfileActionResult> {
+  try {
+    await requireDashboardAccess(businessId);
+    await loadBusiness(businessId);
+    return { ok: true, snapshot: await getBusinessProfile(businessId), message: "Refreshed from Meta." };
   } catch (error) { return failure(error); }
 }

@@ -21,7 +21,31 @@ export type BusinessProfile = {
 export type EditableProfile = Omit<BusinessProfile, "profilePictureUrl">;
 
 export type DisplayNameStatus = "approved" | "pending" | "rejected" | "unknown";
-export type DisplayName = { name: string; phone: string; status: DisplayNameStatus };
+export type QualityRating = "high" | "medium" | "low" | "unknown";
+/** Meta is the source of truth for all of this; Tany never stores a copy of the display name. */
+export type DisplayName = { name: string; phone: string; status: DisplayNameStatus; quality: QualityRating };
+
+/** Read-only diagnostics from one fresh Meta read. */
+export type ProfileDiagnostics = { phoneNumberId: string; wabaId: string; refreshedAt: string };
+
+/** Meta's phone-number quality_rating; Unknown when Meta doesn't report one. */
+export function qualityRating(value: unknown): QualityRating {
+  const rating = String(value ?? "").toUpperCase();
+  return rating === "GREEN" ? "high" : rating === "YELLOW" ? "medium" : rating === "RED" ? "low" : "unknown";
+}
+
+/** Customer-facing profile checklist, separate from display-name approval. */
+export function profileChecklist(profile: BusinessProfile) {
+  return [
+    { label: "Profile picture", complete: !!profile.profilePictureUrl },
+    { label: "About", complete: !!profile.about.trim() },
+    { label: "Description", complete: !!profile.description.trim() },
+    { label: "Category", complete: profile.vertical !== "UNDEFINED" },
+    { label: "Email", complete: !!profile.email.trim() },
+    { label: "Website", complete: profile.websites.length > 0 },
+    { label: "Address", complete: !!profile.address.trim() },
+  ];
+}
 
 /** Limits from the Cloud API business profile reference. */
 export const profileLimits = { about: 139, description: 512, email: 128, address: 256, website: 256, websites: 2 };
