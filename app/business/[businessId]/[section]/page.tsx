@@ -17,7 +17,8 @@ import { CatalogPanel } from "@/app/admin/components/catalog-panel";
 import { workspaceProductContext } from "@/app/business/_components/workspace-product-context";
 import { matchesWorkspaceModule, workspaceProductModules } from "@/lib/admin/workspace-products";
 import { isWorkspaceAlias, workspaceDisplayName, workspaceRoot } from "@/lib/admin/workspace-root";
-import { RetailAdminLinks } from "@/app/business/_components/retail-admin-links";
+import { ProductAdminLinks } from "@/app/business/_components/product-admin-links";
+import { workspaceProductFor } from "@/lib/admin/product-workspace";
 import { LoadingPanel } from "@/app/admin/components/shared";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
 import { canViewBusiness } from "@/app/business/_components/business-access";
@@ -41,7 +42,7 @@ async function Section({ params, searchParams }: SectionProps) {
         clientFacing={false}
         conversationId={section === "inbox" && typeof conversation === "string" ? conversation : undefined}
       />
-      {section === "settings" && (await isWorkspaceAlias()) && <RetailAdminLinks />}
+      {section === "settings" && (await isWorkspaceAlias()) && workspaceProductFor(businessId) && <ProductAdminLinks product={workspaceProductFor(businessId)!} />}
     </>);
   }
   if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;

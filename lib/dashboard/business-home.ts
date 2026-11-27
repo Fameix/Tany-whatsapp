@@ -3,7 +3,8 @@ import { getOperationsData } from "@/lib/admin/operations-service";
 import type { OperationConversation, OperationMessage } from "@/lib/admin/operations-types";
 import { automationDashboard } from "@/lib/automations/service";
 import { EntitlementError } from "@/lib/subscriptions/entitlements";
-import { getClientWhatsAppConnection } from "@/lib/whatsapp/client-connection";
+import { getClientWhatsAppConnection, type ClientWhatsAppConnection } from "@/lib/whatsapp/client-connection";
+import { SetupError } from "@/lib/whatsapp/setup-service";
 import type { TanyVertical } from "@/lib/messaging/types";
 
 /** Home sections a product can compose. Products choose their order and may add
@@ -14,7 +15,7 @@ const productModules: Partial<Record<TanyVertical, HomeModuleId[]>> = {};
 export const homeModulesFor = (vertical: TanyVertical) => productModules[vertical] ?? defaultModules;
 
 export type HomeConnection = {
-  state: "connected" | "attention" | "setup" | "not_connected";
+  state: "connected" | "attention" | "setup" | "not_connected" | "inactive";
   displayName: string;
   displayPhone: string;
 };
@@ -72,7 +73,18 @@ function conversationStatus(conversation: OperationConversation, lastIncoming: b
   return "open";
 }
 
-function connectionState(connection: Awaited<ReturnType<typeof getClientWhatsAppConnection>>): HomeConnection["state"] {
+/** An inactive business has no WhatsApp setup to read; Home shows it as inactive instead of failing. */
+async function homeConnection(businessId: string): Promise<ClientWhatsAppConnection | null> {
+  try {
+    return await getClientWhatsAppConnection(businessId);
+  } catch (error) {
+    if (error instanceof SetupError && error.code === "BUSINESS_UNAVAILABLE") return null;
+    throw error;
+  }
+}
+
+function connectionState(connection: ClientWhatsAppConnection | null): HomeConnection["state"] {
+  if (!connection) return "inactive";
   if (connection.status === "connected") return connection.health === "needs_attention" ? "attention" : "connected";
   if (connection.status === "error") return "attention";
   if (connection.status === "pending" || connection.status === "testing") return "setup";
@@ -108,7 +120,7 @@ export async function getBusinessHome(business: { id: string; name: string; vert
   const now = Date.now();
   const [operations, connection, automations] = await Promise.all([
     getOperationsData(business.id),
-    getClientWhatsAppConnection(business.id),
+    homeConnection(business.id),
     automationSummary(business.id, now),
   ]);
   if (operations.businessId !== business.id) throw new Error("Business home data is not scoped to this business.");
@@ -149,7 +161,7 @@ export async function getBusinessHome(business: { id: string; name: string; vert
   return {
     business,
     generatedAt: now,
-    connection: { state: connectionState(connection), displayName: connection.displayName, displayPhone: connection.displayPhone ? formatPhone(connection.displayPhone) : "" },
+    connection: { state: connectionState(connection), displayName: connection?.displayName ?? "", displayPhone: connection?.displayPhone ? formatPhone(connection.displayPhone) : "" },
     metrics,
     attention: attention.slice(0, 5),
     recent: conversations.slice(0, 6),

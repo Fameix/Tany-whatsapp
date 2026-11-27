@@ -16,6 +16,8 @@ import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sig
 import { isSuperAdmin } from "@/lib/admin/super-admin-session";
 import { isWorkspaceAlias, workspaceDisplayName, workspaceRoot } from "@/lib/admin/workspace-root";
 import { AdminProductMenu } from "@/app/admin/components/control-center/product-selector";
+import { workspaceProductFor } from "@/lib/admin/product-workspace";
+import { verticalConfig } from "@/lib/messaging/vertical-config";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
@@ -26,8 +28,9 @@ import {
 } from "@/lib/admin/dashboard-session";
 import "@/app/admin/admin.css";
 
-export async function generateMetadata(): Promise<Metadata> {
-  return { title: (await isWorkspaceAlias()) ? "Tany Retail Admin" : "Tany WhatsApp Operations" };
+export async function generateMetadata({ params }: { params: Promise<{ businessId: string }> }): Promise<Metadata> {
+  const product = (await isWorkspaceAlias()) ? workspaceProductFor((await params).businessId) : null;
+  return { title: product ? `${verticalConfig[product].label} Admin` : "Tany WhatsApp Operations" };
 }
 
 function workspaceLog(marker: string, details: Record<string, unknown>) {
@@ -43,7 +46,7 @@ async function WorkspaceLayout({
 }) {
   await connection();
   const { businessId } = await params;
-  // A Super Admin alias (Tany Retail → test-retail) is never served to anyone else.
+  // A Super Admin product workspace (e.g. Tany Retail → test-retail) is never served to anyone else.
   const alias = await isWorkspaceAlias();
   if (alias && !(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   let access;
@@ -82,8 +85,8 @@ async function WorkspaceLayout({
       businessProduct={product}
       workspaceRoot={root}
       workspaceSwitcher={alias ? (
-        // Super Admin → Tany Retail is the product's own workspace: the same product selector as
-        // every Super Admin product page (Tany Retail selected), no business switcher, no back link.
+        // Super Admin → <product> is the product's own workspace: the same product selector as
+        // every Super Admin page (that product selected), no business switcher, no back link.
         <AdminProductMenu />
       ) : <>
         <WorkspaceMenu business={shellBusiness} product={product} products={products} />

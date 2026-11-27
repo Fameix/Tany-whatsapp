@@ -222,8 +222,9 @@ async function main() {
   // 5. Pages check Super Admin access before reading data; Postgres only; no migration wording.
   const pages = {
     "app/admin/page.tsx": "getOperationalOverview(null)",
-    "app/admin/products/[product]/page.tsx": "getOperationalOverview(liveProduct,",
-    "app/admin/products/[product]/[section]/page.tsx": "getProductOperationsData(live,",
+    // Live products' pages are their workspaces (lib/admin/product-workspace); these only render coming-soon products.
+    "app/admin/products/[product]/page.tsx": "tanyProducts.find(",
+    "app/admin/products/[product]/[section]/page.tsx": "tanyProducts.find(",
     "app/admin/businesses/page.tsx": "listProductBusinesses()",
     "app/admin/system/page.tsx": "listProductBusinesses()",
   };
@@ -232,6 +233,8 @@ async function main() {
     assert.ok(source.indexOf("isSuperAdmin()") > 0 && source.indexOf("isSuperAdmin()") < source.indexOf(load), `${page} checks access before data`);
     assert.doesNotMatch(source, /mirrored|Firestore|Postgres|migration terminology/i, `${page} has no technical wording`);
   }
+  for (const page of ["app/admin/products/[product]/page.tsx", "app/admin/products/[product]/[section]/page.tsx"])
+    assert.doesNotMatch(fs.readFileSync(page, "utf8"), /getOperationalOverview|getProductOperationsData/, `${page} reads no operational data`);
   const data = fs.readFileSync("lib/admin/product-center.ts", "utf8");
   assert.doesNotMatch(data, /firebase-admin|adminDb|collection\(/, "Postgres only, no Firestore fallback");
   assert.match(data, /from messaging_businesses b/);

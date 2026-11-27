@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { ChevronRight, FlaskConical, type LucideIcon } from "lucide-react";
+import { verticalConfig } from "@/lib/messaging/vertical-config";
+import type { ProductTestProduct } from "@/lib/admin/product-test-tenants";
 import { Surface } from "./home/home-primitives";
 
-/** Settings → Tany Retail administration. Only shown inside Super Admin → Tany Retail, where the
- * workspace replaces the product pages; these are the Super Admin pages that remain. */
-export function RetailAdminLinks() {
+/** Settings → <product> administration. Only shown inside a Super Admin product workspace, where
+ * the workspace replaces the product pages; these are the Super Admin pages that remain. */
+export function ProductAdminLinks({ product }: { product: ProductTestProduct }) {
+  const name = verticalConfig[product].label;
   const items: Array<{ label: string; description: string; href: string; icon: LucideIcon }> = [
-    { label: "Test & staging", description: "Test data and staging tools for Tany Retail", href: "/admin/system?product=retail", icon: FlaskConical },
+    { label: "Test & staging", description: `Test data and staging tools for ${name}`, href: `/admin/system?product=${product}`, icon: FlaskConical },
   ];
   return (
-    <section aria-labelledby="retail-admin" className="mt-6 flex flex-col gap-2">
+    <section aria-labelledby="product-admin" className="mt-6 flex flex-col gap-2">
       <div>
-        <h2 id="retail-admin" className="text-sm font-semibold tracking-tight">Tany Retail administration</h2>
+        <h2 id="product-admin" className="text-sm font-semibold tracking-tight">{name} administration</h2>
         <p className="mt-1 text-xs text-muted-foreground">Test data and staging tools.</p>
       </div>
       <Surface className="overflow-hidden">

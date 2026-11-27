@@ -8,6 +8,7 @@ const labels: Record<HomeConnection["state"], { title: string; tone: "success" |
   attention: { title: "WhatsApp needs attention", tone: "warning", cta: "Review" },
   setup: { title: "WhatsApp setup in progress", tone: "warning", cta: "Continue setup" },
   not_connected: { title: "WhatsApp not connected", tone: "neutral", cta: "Connect" },
+  inactive: { title: "Business inactive", tone: "neutral" },
 };
 
 /** Compact, glanceable connection state for the Home header. */
@@ -20,7 +21,7 @@ export function ConnectionStatus({ connection, href }: { connection: HomeConnect
         <StatusDot tone={tone} />
         <div className="min-w-0">
           <p className="text-sm font-medium leading-5">{title}</p>
-          <p className="truncate text-xs leading-5 text-muted-foreground tabular-nums">{identity || "Connect a WhatsApp Business number to start"}</p>
+          <p className="truncate text-xs leading-5 text-muted-foreground tabular-nums">{identity || (connection.state === "inactive" ? "Activate this business to resume messaging" : "Connect a WhatsApp Business number to start")}</p>
         </div>
         <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
           {cta ?? "Manage"}

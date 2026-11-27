@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-// Super Admin → Tany Retail is test-retail's business workspace, A to Z: every
-// /admin/products/retail/* page is the matching /business/test-retail/* page, and the
-// workspace's links stay inside Tany Retail. The WhatsApp page keeps its account states.
+// Super Admin → each live product (Retail, Eats, Motos) is its test tenant's business workspace,
+// A to Z: every /admin/products/<product>/* page is the matching /business/<tenant>/* page, and
+// the workspace's links stay inside that product. The WhatsApp page keeps its account states.
 const fs = require("node:fs");
-const proxy0 = () => fs.readFileSync("proxy.ts", "utf8");
 
 async function main() {
   const assert = (await import("node:assert/strict")).default;
@@ -21,43 +20,38 @@ async function main() {
   assert.equal(connectionStatusView("Error").showActions, true);
   console.log("PASS each WhatsApp account state shows the right message; only active businesses get actions");
 
-  const { retailWorkspaceTarget, retiredRetailRedirect, workspaceRootFor } = await import("../lib/admin/retail-workspace.ts");
-  const cases = {
-    "/admin/products/retail": "/business/test-retail",
-    "/admin/products/retail/": "/business/test-retail",
-    "/admin/products/retail/inbox": "/business/test-retail/inbox",
-    "/admin/products/retail/contacts": "/business/test-retail/contacts",
-    "/admin/products/retail/automations": "/business/test-retail/automations",
-    "/admin/products/retail/campaigns": "/business/test-retail/campaigns",
-    "/admin/products/retail/templates": "/business/test-retail/templates",
-    "/admin/products/retail/templates/new": "/business/test-retail/templates/new",
-    "/admin/products/retail/products": "/business/test-retail/products",
-    "/admin/products/retail/orders": "/business/test-retail/orders",
-    "/admin/products/retail/whatsapp": "/business/test-retail/whatsapp",
-    "/admin/products/retail/whatsapp/profile": "/business/test-retail/whatsapp/profile",
-    "/admin/products/retail/whatsapp/setup": "/business/test-retail/whatsapp/setup",
-    "/admin/products/retail/settings": "/business/test-retail/settings",
-    "/admin/products/retail/message-status": "/business/test-retail/message-status",
-    "/admin/products/retail/stores": null,
-    "/admin/products/retailer": null,
-    "/admin/products/eats": null,
-    "/admin/products/eats/whatsapp": null,
-    "/admin/products/motos/inbox": null,
-    "/admin": null,
-    "/business/test-retail": null,
-  };
-  for (const [path, target] of Object.entries(cases)) assert.equal(retailWorkspaceTarget(path), target, path);
-  for (const path of ["/admin/products/retail/stores", "/admin/products/retail/stores/x", "/admin/products/retail/staging"])
-    assert.equal(retiredRetailRedirect(path), "/admin/products/retail", `${path} opens the workspace, not the old directory`);
-  for (const path of ["/admin/products/retail", "/admin/products/retail/inbox", "/admin/products/eats/stores", "/admin/products/eats/restaurants"])
-    assert.equal(retiredRetailRedirect(path), null, path);
-  for (const file of ["app/admin/products/[product]/page.tsx", "app/admin/products/[product]/[section]/page.tsx"])
-    assert.match(fs.readFileSync(file, "utf8"), /if \(!product \|\| product\.id === "retail"\) notFound\(\);/, `${file}: the old Retail dashboard is never rendered`);
-  assert.match(proxy0(), /if \(retired\) \{/, "the proxy redirects old Retail URLs");
-  assert.equal(workspaceRootFor("test-retail", true), "/admin/products/retail");
-  assert.equal(workspaceRootFor("test-retail", false), "/business/test-retail");
-  assert.equal(workspaceRootFor("test-eats", true), "/business/test-eats", "only test-retail is aliased");
-  console.log("PASS every Tany Retail page maps to test-retail's workspace; old Retail dashboard URLs open the workspace; Eats and Motos unchanged");
+  const { productWorkspaceTarget, retiredProductRedirect, workspaceRootFor, workspaceProductFor } = await import("../lib/admin/product-workspace.ts");
+  const tenants = { retail: "test-retail", eats: "test-eats", motos: "test-motos" };
+  const shared = ["", "/inbox", "/contacts", "/automations", "/campaigns", "/templates", "/templates/new", "/whatsapp", "/whatsapp/profile", "/whatsapp/setup", "/whatsapp-accounts", "/message-status", "/webhook-health", "/settings"];
+  const tools = { retail: ["/products", "/orders"], eats: ["/menu", "/orders", "/delivery"], motos: ["/vehicles", "/leads", "/test-drives"] };
+  for (const [product, tenant] of Object.entries(tenants)) {
+    for (const rest of [...shared, ...tools[product]])
+      assert.equal(productWorkspaceTarget(`/admin/products/${product}${rest}`), `/business/${tenant}${rest}`, `${product}${rest}`);
+    assert.equal(productWorkspaceTarget(`/admin/products/${product}/`), `/business/${tenant}`);
+    assert.equal(workspaceRootFor(tenant, true), `/admin/products/${product}`);
+    assert.equal(workspaceRootFor(tenant, false), `/business/${tenant}`);
+    assert.equal(workspaceProductFor(tenant), product);
+  }
+  for (const [product, old] of [["retail", "stores"], ["eats", "restaurants"], ["motos", "dealers"], ["retail", "staging"], ["eats", "staging"], ["motos", "staging"]]) {
+    assert.equal(productWorkspaceTarget(`/admin/products/${product}/${old}`), null);
+    assert.equal(retiredProductRedirect(`/admin/products/${product}/${old}`), `/admin/products/${product}`, `${product}/${old} opens the workspace, not the old directory`);
+  }
+  for (const path of ["/admin/products/cabs", "/admin/products/salon/settings", "/admin/products/retailer", "/admin", "/admin/products", "/business/test-retail", "/admin/businesses"]) {
+    assert.equal(productWorkspaceTarget(path), null, path);
+    assert.equal(retiredProductRedirect(path), null, path);
+  }
+  assert.equal(workspaceRootFor("some-real-business", true), "/business/some-real-business", "only test tenants back a product workspace");
+  for (const file of ["app/admin/products/[product]/page.tsx", "app/admin/products/[product]/[section]/page.tsx"]) {
+    const page = fs.readFileSync(file, "utf8");
+    assert.match(page, /if \(!product \|\| isActiveTanyVertical\(product\.id\)\) notFound\(\);/, `${file}: no old live-product dashboard is rendered`);
+    assert.doesNotMatch(page, /BusinessTable|Open workspace|getOperationalOverview|ProductWhatsApp/, `${file}: no directory-first UX`);
+  }
+  assert.match(fs.readFileSync("proxy.ts", "utf8"), /if \(retired\) \{/, "the proxy redirects old product URLs");
+  const context = fs.readFileSync("app/business/_components/workspace-product-context.ts", "utf8");
+  assert.match(context, /const aliasProduct = \(await isWorkspaceAlias\(\)\) \? workspaceProductFor\(businessId\) : null;/, "a Super Admin product workspace shows that product's tools");
+  const home = fs.readFileSync("lib/dashboard/business-home.ts", "utf8");
+  assert.match(home, /error instanceof SetupError && error\.code === "BUSINESS_UNAVAILABLE"\) return null;/, "Home shows an inactive business instead of failing");
+  console.log("PASS Retail, Eats and Motos each map every page to their own test tenant; old dashboard URLs open the workspace; coming-soon products untouched");
 
   const proxy = fs.readFileSync("proxy.ts", "utf8");
   assert.match(proxy, /requestHeaders\.delete\(workspaceAliasHeader\);/, "a client-supplied alias marker is never trusted");
@@ -70,7 +64,7 @@ async function main() {
   assert.match(layout, /<AdminProductMenu \/>/, "Tany Retail has the same product selector as Motos and Eats");
   assert.match(layout, /name: await workspaceDisplayName\(business\)/, "the shell shows the product name, not the staging business");
   assert.match(fs.readFileSync("lib/admin/workspace-root.ts", "utf8"), /\(await isWorkspaceAlias\(\)\) \? verticalConfig\[business\.vertical\]\.label : business\.name/);
-  assert.doesNotMatch(fs.readFileSync("app/business/_components/retail-admin-links.tsx", "utf8"), /href: "\/admin"/, "Settings has no back-to-Super-Admin row");
+  assert.doesNotMatch(fs.readFileSync("app/business/_components/product-admin-links.tsx", "utf8"), /href: "\/admin"/, "Settings has no back-to-Super-Admin row");
   assert.match(fs.readFileSync("app/business/_components/business-access.ts", "utf8"), /if \(\(await isWorkspaceAlias\(\)\) && !\(await isSuperAdmin\(\)\)\) return false;/, "pages re-check Super Admin too");
   const shell = fs.readFileSync("app/admin/components/admin-shell.tsx", "utf8");
   assert.doesNotMatch(shell, /retail-whatsapp-route|workspacePathFor/, "no per-page alias hacks remain");
@@ -80,7 +74,7 @@ async function main() {
     "app/business/_components/whatsapp-setup-wizard.tsx", "app/business/[businessId]/templates/page.tsx",
     "app/business/[businessId]/templates/[templateId]/page.tsx", "app/business/[businessId]/whatsapp/profile/page.tsx",
   ]) assert.doesNotMatch(fs.readFileSync(file, "utf8"), /`\/business\/\$\{/, `${file} links inside the current workspace`);
-  console.log("PASS alias is Super Admin only and workspace links stay inside Tany Retail");
+  console.log("PASS alias is Super Admin only and workspace links stay inside the product");
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
