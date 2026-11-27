@@ -37,9 +37,11 @@ const money = (amount: number) =>
 export function RecordTable({
   records,
   section,
+  label = section,
 }: {
   records: WorkspaceRecord[];
   section: WorkspaceCollection;
+  label?: string;
 }) {
   const [search, setSearch] = useState("");
   const filtered = records.filter((record) =>
@@ -59,8 +61,8 @@ export function RecordTable({
           />
           <Input
             type="search"
-            aria-label={`Search ${section}`}
-            placeholder={`Search ${section}...`}
+            aria-label={`Search ${label}`}
+            placeholder={`Search ${label}...`}
             className="pl-9"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -151,7 +153,7 @@ export function RecordTable({
             <Inbox className="size-5 text-muted-foreground" />
           </div>
           <h2 className="text-sm font-semibold">
-            {search ? "No matching records" : `No ${section} yet`}
+            {search ? "No matching records" : `No ${label} yet`}
           </h2>
           <p className="mt-2 max-w-sm text-sm text-muted-foreground">
             {search

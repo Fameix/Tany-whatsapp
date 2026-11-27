@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash, createHmac, randomInt, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { purchasedWorkspaceProducts } from "./workspace-products";
 import { postgresTransactionPool } from "@/lib/data/postgres-client";
 
 const otpTtlMs = 5 * 60_000;
@@ -103,22 +104,23 @@ export async function verifyPhoneLoginOtp(phone: string, code: string) {
       await client.query("commit");
       throw new PhoneLoginError("ACCOUNT_UNAVAILABLE", 403);
     }
-    const memberships = await client.query("select b.id,b.legacy_business_id,b.name,b.status from messaging_auth_user_businesses ub join messaging_businesses b on b.id=ub.messaging_business_id where ub.user_id=$1 and b.status='active' order by b.name,b.legacy_business_id", [user.rows[0].id]) as unknown as AuthResult<{ id: string; legacy_business_id: string; name: string; status: string }>;
-    if (!memberships.rowCount) {
+    const memberships = await client.query("select b.id,b.legacy_business_id,b.name,b.vertical,b.products from messaging_auth_user_businesses ub join messaging_businesses b on b.id=ub.messaging_business_id where ub.user_id=$1 and b.status='active' order by b.name,b.legacy_business_id", [user.rows[0].id]) as unknown as AuthResult<{ id: string; legacy_business_id: string; name: string; vertical: string; products: unknown }>;
+    const eligible = memberships.rows.filter(business => purchasedWorkspaceProducts(business.vertical, business.products).length);
+    if (!eligible.length) {
       await client.query("update messaging_phone_login_challenges set consumed_at=now() where id=$1", [challenge.id]);
       await client.query("commit");
       throw new PhoneLoginError("ACCOUNT_UNAVAILABLE", 403);
     }
     const token = `otp_${randomBytes(32).toString("base64url")}`;
     const tokenHash = hash(token);
-    const singleBusiness = memberships.rowCount === 1 ? memberships.rows[0].id : null;
+    const singleBusiness = eligible.length === 1 ? eligible[0].id : null;
     await client.query("insert into messaging_phone_login_sessions(token_hash,user_id,selected_business_id,expires_at) values($1,$2,$3,$4)", [tokenHash, user.rows[0].id, singleBusiness, new Date(Date.now() + sessionTtlMs).toISOString()]);
     await client.query("update messaging_phone_login_challenges set consumed_at=now() where id=$1", [challenge.id]);
     await client.query("commit");
     return {
       token,
-      businesses: memberships.rows.map(row => ({ id: text(row.legacy_business_id), name: text(row.name) })),
-      selectedBusinessId: singleBusiness ? text(memberships.rows[0].legacy_business_id) : null,
+      businesses: eligible.map(row => ({ id: text(row.legacy_business_id), name: text(row.name) })),
+      selectedBusinessId: singleBusiness ? text(eligible[0].legacy_business_id) : null,
     };
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
@@ -140,15 +142,18 @@ export async function resolvePhoneLoginSession(token: string) {
 
 export async function selectPhoneLoginBusiness(token: string, businessId: string) {
   if (!token.startsWith("otp_") || !businessId) throw new PhoneLoginError("INVALID_SESSION", 401);
+  if (!(await listPhoneLoginBusinesses(token)).some(business => business.id === businessId))
+    throw new PhoneLoginError("BUSINESS_FORBIDDEN", 403);
   const result = await poolQuery("update messaging_phone_login_sessions s set selected_business_id=b.id,last_seen_at=now() from messaging_businesses b join messaging_auth_user_businesses ub on ub.messaging_business_id=b.id where s.token_hash=$1 and s.user_id=ub.user_id and s.expires_at > now() and b.legacy_business_id=$2 and b.status='active' returning b.legacy_business_id", [hash(token), businessId]);
   if (!result.rowCount) throw new PhoneLoginError("BUSINESS_FORBIDDEN", 403);
 }
 
 export async function listPhoneLoginBusinesses(token: string) {
   if (!token.startsWith("otp_") || token.length > 100) throw new PhoneLoginError("INVALID_SESSION", 401);
-  const result = await poolQuery<{ id: string; name: string }>("select b.legacy_business_id as id,b.name from messaging_phone_login_sessions s join messaging_auth_users u on u.id=s.user_id join messaging_auth_user_businesses ub on ub.user_id=u.id join messaging_businesses b on b.id=ub.messaging_business_id where s.token_hash=$1 and s.expires_at > now() and u.status='active' and b.status='active' order by b.name,b.legacy_business_id", [hash(token)]);
+  const result = await poolQuery<{ id: string; name: string; vertical: string; products: unknown }>("select b.legacy_business_id as id,b.name,b.vertical,b.products from messaging_phone_login_sessions s join messaging_auth_users u on u.id=s.user_id join messaging_auth_user_businesses ub on ub.user_id=u.id join messaging_businesses b on b.id=ub.messaging_business_id where s.token_hash=$1 and s.expires_at > now() and u.status='active' and b.status='active' order by b.name,b.legacy_business_id", [hash(token)]);
   if (!result.rowCount) throw new PhoneLoginError("INVALID_SESSION", 401);
-  return result.rows.map(row => ({ id: text(row.id), name: text(row.name) }));
+  return result.rows.filter(row => purchasedWorkspaceProducts(row.vertical, row.products).length)
+    .map(row => ({ id: text(row.id), name: text(row.name) }));
 }
 
 export async function revokePhoneLoginSession(token: string) {

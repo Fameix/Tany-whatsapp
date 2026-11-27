@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
+import { businessWorkspacePath } from "@/lib/admin/workspace-path";
 import type { ReactNode } from "react";
 import { cn } from "cn";
 import type { ProductBusiness } from "@/lib/admin/product-center";
@@ -40,7 +42,7 @@ export const shortDate = (iso: string | null) => (iso ? new Intl.DateTimeFormat(
 /** Compact business rows; columns collapse on small screens. */
 type BusinessTableRow = Pick<ProductBusiness, "id" | "name" | "product" | "kind" | "active" | "whatsapp" | "createdAt" | "lastActivity">;
 
-export function BusinessTable<T extends BusinessTableRow>({ businesses, showKind = false, showProduct = true, openLabel = "Open", actions }: { businesses: T[]; showKind?: boolean; showProduct?: boolean; openLabel?: string; actions?: (business: T) => ReactNode }) {
+export function BusinessTable<T extends BusinessTableRow>({ businesses, showKind = false, showProduct = true, openLabel = "Open", primaryWorkspace = false, actions }: { businesses: T[]; showKind?: boolean; showProduct?: boolean; openLabel?: string; primaryWorkspace?: boolean; actions?: (business: T) => ReactNode }) {
   return (
     <div className={cn(surface, "overflow-hidden")}>
       <table className="w-full text-left text-sm">
@@ -71,7 +73,7 @@ export function BusinessTable<T extends BusinessTableRow>({ businesses, showKind
               <td className="hidden px-4 py-3 text-xs text-muted-foreground tabular-nums lg:table-cell">{shortDate(showKind ? business.createdAt : business.lastActivity)}{showKind && business.lastActivity ? <span className="block">Last activity {shortDate(business.lastActivity)}</span> : null}</td>
               <td className="px-4 py-3 text-right sm:px-6">
                 <div className="flex flex-wrap justify-end gap-1">
-                  <Link href={`/business/${encodeURIComponent(business.id)}`} className="inline-flex min-h-9 items-center rounded-md px-2.5 text-xs font-medium hover:bg-muted">{openLabel}</Link>
+                  <Link href={businessWorkspacePath(business.id)} className={cn(buttonVariants({ variant: primaryWorkspace ? "default" : "ghost", size: "sm" }), "min-h-10 whitespace-nowrap")}>{openLabel}</Link>
                   {actions?.(business)}
                 </div>
               </td>

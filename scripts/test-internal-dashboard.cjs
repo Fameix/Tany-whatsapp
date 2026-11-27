@@ -21,9 +21,9 @@ function main() {
 
   const switcher = source("app/business/[businessId]/layout.tsx");
   assert.match(switcher, /requireDashboardAccess\(businessId\)/);
-  assert.match(switcher, /access === "admin"[\s\S]*?<AdminProductMenu\s*\/>/);
-  assert.match(switcher, /active && isActiveTanyVertical\(vertical\)/);
-  assert.match(switcher, /canSeeAdmin=\{false\}/);
+  assert.match(switcher, /workspaceProductContext\(businessId\)/);
+  assert.match(switcher, /<WorkspaceMenu business=\{shellBusiness\} product=\{product\} products=\{products\}/);
+  assert.match(switcher, /access === "admin"[\s\S]*?Back to product admin/);
   assert.doesNotMatch(switcher, /listBusinessProfiles/);
   const adminLayout = source("app/admin/layout.tsx");
   assert.match(adminLayout, /<AdminProductMenu\s*\/>/);
@@ -36,13 +36,9 @@ function main() {
   assert.doesNotMatch(productSelector, /listBusinessProfiles|WorkspaceOption|\/business\//);
 
   const menu = source("app/admin/components/workspace-menu.tsx");
-  assert.match(menu, /encodeURIComponent\(option\.id\)/);
-  assert.doesNotMatch(menu, /activeProducts/);
-  assert.doesNotMatch(menu, /\/admin\/products\/\$\{product\.key\}/);
-  assert.match(menu, /isActiveTanyVertical\(key\)/);
-  assert.match(menu, /activeOrder\.indexOf\(left\.key\)/);
-  assert.match(menu, /product\.active && canSeeAdmin/);
-  assert.match(menu, /href=\{`\/admin\/products\/\$\{encodeURIComponent\(product\.key\)\}`\}/);
+  assert.match(menu, /products\.map/);
+  assert.match(menu, /products\.length < 2/);
+  assert.doesNotMatch(menu, /Coming Soon|Super Admin|\/admin\/products|\bObject\.values\b/);
 
   const businessLoader = source("app/business/_components/load-business.ts");
   assert.match(businessLoader, /isActiveTanyVertical\(business\.vertical\)/);
@@ -52,11 +48,12 @@ function main() {
   assert.match(productResolver, /liveProduct \? await getOperationalOverview\(liveProduct, \{ includeTestData \}\) : null/);
   assert.match(productResolver, /<BusinessTable businesses=\{data\.directory\}/);
   const businessTable = source("app/admin/components/control-center/ui.tsx");
-  assert.ok(businessTable.includes("`/business/${encodeURIComponent(business.id)}`"));
+  assert.match(businessTable, /businessWorkspacePath\(business\.id\)/);
   const productSection = source("app/admin/products/[product]/[section]/page.tsx");
   assert.match(productSection, /productNavigation\(product\)/);
-  assert.match(productSection, /getProductOperationsData\(product\.id, includeTestData\)/);
-  assert.match(productSection, /listProductProfiles\(product\.id, includeTestData\)/);
+  assert.match(productSection, /getProductOperationsData\(live, includeTestData\)/);
+  assert.match(productSection, /productWorkspaceRedirect/);
+  assert.doesNotMatch(productSection, /AutomationBuilder|listProductRecords|section === "inbox"/);
   assert.doesNotMatch(productSection, /getOperationsData\(|listBusinessProfiles/);
   assert.match(source("lib/admin/operations-service.ts"), /aggregateOperations\(await listProductProfiles\(product, includeTestData\)/);
   assert.match(source("app/admin/product-test-data-actions.ts"), /await isSuperAdmin\(\)/);
@@ -69,6 +66,7 @@ function main() {
   assert.match(workspaceLayout, /requireDashboardAccess\(businessId\)/);
   assert.doesNotMatch(workspaceLayout, /demo-eats/);
   assert.doesNotMatch(workspaceLayout, /demo-retail/);
+  assert.doesNotMatch(source("app/business/[businessId]/not-found.tsx"), /Super Admin|\/admin/);
 
   console.log(
     "PASS: signed dashboard authorization, product-scoped discovery, tenant-scoped access, and stable business-ID navigation are enforced.",

@@ -32,7 +32,8 @@ import {
 import type { AdminBusiness } from "@/lib/admin/types";
 import { adminProductFromPath, adminProductPath, stagingBootstrapAttemptParam } from "@/lib/admin/product-routes";
 import { productNavigation, type ProductSection } from "@/lib/admin/product-navigation";
-import type { TanyProduct } from "@/lib/messaging/vertical-config";
+import { workspaceProductModules, type WorkspaceProductModule } from "@/lib/admin/workspace-products";
+import type { ActiveTanyVertical, TanyProduct } from "@/lib/messaging/vertical-config";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -70,11 +71,13 @@ import {
 
 type NavLink = { label: string; href: string; icon: LucideIcon; match?: string[]; nested?: boolean };
 const productIcons: Record<ProductSection, LucideIcon> = {
-  overview: LayoutDashboard, dealers: Building2, leads: UserRoundSearch, vehicles: CarFront,
-  "test-drives": CalendarDays, restaurants: Utensils, orders: Package, delivery: Truck,
-  stores: Store, products: Package, customers: Users, inbox: Inbox, templates: FileText,
-  automations: Workflow, campaigns: Megaphone, whatsapp: MessageCircle, "message-status": CheckCheck,
-  "webhook-health": Activity, settings: Settings,
+  overview: LayoutDashboard, dealers: Building2, restaurants: Utensils, stores: Store,
+  whatsapp: MessageCircle, "message-status": CheckCheck, "webhook-health": Activity,
+  staging: FlaskConical, settings: Settings,
+};
+const workspaceIcons: Record<WorkspaceProductModule["section"], LucideIcon> = {
+  products: Package, orders: Package, menu: Utensils, delivery: Truck,
+  vehicles: CarFront, leads: UserRoundSearch, "test-drives": CalendarDays,
 };
 function adminGroups(product?: TanyProduct): { label?: string; links: NavLink[] }[] {
   if (!product) return adminNavigation();
@@ -86,7 +89,7 @@ function adminGroups(product?: TanyProduct): { label?: string; links: NavLink[] 
 
 /** Business workspaces get a customer-facing hierarchy; technical pages stay reachable
  * from Settings → WhatsApp diagnostics and keep their existing URLs. */
-function businessNavigation(business: AdminBusiness): { primary: NavLink[]; secondary: NavLink[] } {
+function businessNavigation(business: AdminBusiness, product: ActiveTanyVertical | null): { primary: NavLink[]; modules: NavLink[]; secondary: NavLink[] } {
   const root = `/business/${encodeURIComponent(business.id)}`;
   return {
     primary: [
@@ -97,6 +100,9 @@ function businessNavigation(business: AdminBusiness): { primary: NavLink[]; seco
       { label: "Campaigns", href: `${root}/campaigns`, icon: Megaphone },
       { label: "Templates", href: `${root}/templates`, icon: FileText, nested: true },
     ],
+    modules: workspaceProductModules(product).map(({ section, label }) => ({
+      label, href: root + "/" + section, icon: workspaceIcons[section],
+    })),
     secondary: [
       { label: "WhatsApp", href: `${root}/whatsapp`, icon: MessageCircle, match: [`${root}/whatsapp/setup`, `${root}/whatsapp-accounts`, `${root}/whatsapp/profile`] },
       { label: "Settings", href: `${root}/settings`, icon: Settings, match: [`${root}/message-status`, `${root}/webhook-health`] },
@@ -112,10 +118,10 @@ const businessPageLabels: Record<string, string> = {
 };
 const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname) || (!!link.nested && pathname.startsWith(`${link.href}/`));
 
-function linksFor(business?: AdminBusiness, product?: TanyProduct): NavLink[] {
+function linksFor(business?: AdminBusiness, product?: TanyProduct, businessProduct: ActiveTanyVertical | null = null): NavLink[] {
   if (business) {
-    const { primary, secondary } = businessNavigation(business);
-    return [...primary, ...secondary];
+    const { primary, modules, secondary } = businessNavigation(business, businessProduct);
+    return [...primary, ...modules, ...secondary];
   }
   return adminGroups(product).flatMap((group) => group.links);
 }
@@ -128,11 +134,6 @@ function adminNavigation(): Array<{ label?: string; links: NavLink[] }> {
       links: [
         { label: "Overview", href: root, icon: LayoutDashboard },
         { label: "Businesses", href: `${root}/businesses`, icon: Building2, nested: true },
-        { label: "Inbox", href: `${root}/inbox`, icon: Inbox },
-        { label: "Customers", href: `${root}/contacts`, icon: Users },
-        { label: "Templates", href: `${root}/templates`, icon: FileText },
-        { label: "Campaigns", href: `${root}/campaigns`, icon: Megaphone },
-        { label: "Automations", href: `${root}/automations`, icon: Workflow },
       ],
     },
     {
@@ -188,13 +189,15 @@ function WorkspaceSidebar({
   business,
   product,
   workspaceSwitcher,
+  businessProduct = null,
 }: {
   business?: AdminBusiness;
   product?: TanyProduct;
   workspaceSwitcher: React.ReactNode;
+  businessProduct?: ActiveTanyVertical | null;
 }) {
   const loading = <div className="h-9 animate-pulse rounded-md bg-muted" />;
-  const groups = business ? businessNavigation(business) : null;
+  const groups = business ? businessNavigation(business, businessProduct) : null;
   return (
     <Sidebar collapsible="offcanvas">
       <div className="border-b p-2">{workspaceSwitcher}</div>
@@ -206,6 +209,10 @@ function WorkspaceSidebar({
                 <Suspense fallback={loading}><Navigation links={groups.primary} /></Suspense>
               </SidebarGroupContent>
             </SidebarGroup>
+            {!!groups.modules.length && <SidebarGroup className="px-2">
+              <SidebarGroupLabel>Product tools</SidebarGroupLabel>
+              <SidebarGroupContent><Suspense fallback={loading}><Navigation links={groups.modules} /></Suspense></SidebarGroupContent>
+            </SidebarGroup>}
             <SidebarGroup className="mt-auto px-2 pb-4">
               <SidebarGroupContent>
                 <Suspense fallback={loading}><Navigation links={groups.secondary} /></Suspense>
@@ -232,9 +239,9 @@ function WorkspaceSidebar({
     </Sidebar>
   );
 }
-function Breadcrumb({ business, product }: { business?: AdminBusiness; product?: TanyProduct }) {
+function Breadcrumb({ business, product, businessProduct }: { business?: AdminBusiness; product?: TanyProduct; businessProduct: ActiveTanyVertical | null }) {
   const pathname = usePathname();
-  const links = linksFor(business, product);
+  const links = linksFor(business, product, businessProduct);
   const root = links[0].href;
   const current =
     links.find((entry) => entry.href === pathname)?.label ??
@@ -267,10 +274,12 @@ export function AdminShell({
   children,
   business,
   workspaceSwitcher,
+  businessProduct = null,
 }: {
   children: React.ReactNode;
   business?: AdminBusiness;
   workspaceSwitcher: React.ReactNode;
+  businessProduct?: ActiveTanyVertical | null;
 }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const router = useRouter();
@@ -298,7 +307,7 @@ export function AdminShell({
     setCommandOpen(false);
     router.push(href);
   };
-  const commands = linksFor(business, product);
+  const commands = linksFor(business, product, businessProduct);
   return (
     <TooltipProvider delayDuration={250}>
       <SidebarProvider
@@ -315,6 +324,7 @@ export function AdminShell({
           business={business}
           product={product}
           workspaceSwitcher={workspaceSwitcher}
+          businessProduct={businessProduct}
         />
         <SidebarInset className="min-w-0">
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 sm:px-6">
@@ -333,7 +343,7 @@ export function AdminShell({
                 </span>
               }
             >
-              <Breadcrumb business={business} product={product} />
+              <Breadcrumb business={business} product={product} businessProduct={businessProduct} />
             </Suspense>
             <div className="ml-auto flex items-center gap-3">
               <Button

@@ -1,6 +1,7 @@
 import "server-only";
 import { documentId } from "@/lib/messaging/services/shared";
 import { databaseMode, repositoryFor, runtimeRepositoryFor } from "@/lib/data/repository";
+import { purchasedWorkspaceProducts } from "@/lib/admin/workspace-products";
 import { activeTanyVerticals } from "@/lib/messaging/vertical-config";
 
 export type Plan = "basic" | "standard" | "pro";
@@ -47,9 +48,6 @@ export async function resolveEntitlements(businessId: string, now = Date.now()) 
 export async function hasEntitlement(businessId: string, feature: Feature) {
   return (await resolveEntitlements(businessId))[feature] === true;
 }
-function isWhatsAppProduct(value: unknown): value is WhatsAppProduct {
-  return typeof value === "string" && (whatsappProducts as readonly string[]).includes(value);
-}
 /**
  * Uses the existing business vertical as the single-product default. A business
  * can opt into multi-product messaging with a `products` array; unknown values
@@ -58,10 +56,7 @@ function isWhatsAppProduct(value: unknown): value is WhatsAppProduct {
 export async function getEnabledProducts(businessId: string): Promise<WhatsAppProduct[]> {
   documentId(businessId);
   const business = await (await runtimeRepositoryFor()).getBusiness(businessId);
-  if (!business || business.active !== true || !isWhatsAppProduct(business.vertical)) return [];
-  // Empty/missing arrays preserve the existing single-vertical business model.
-  const purchased = business.products.length > 0 ? business.products : [business.vertical];
-  return [...new Set(purchased.filter(isWhatsAppProduct))];
+  return business?.active ? purchasedWorkspaceProducts(business.vertical, business.products) : [];
 }
 /** The single commercial gate for WhatsApp routes, setup, and automations. */
 export async function canUseWhatsApp(businessId: string) {

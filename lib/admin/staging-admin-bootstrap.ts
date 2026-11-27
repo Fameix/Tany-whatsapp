@@ -3,7 +3,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { signIntegrationAccess } from "@/lib/integration/access";
 import { dashboardSessionCookieName, dashboardSessionCookieOptions } from "./dashboard-cookie";
 import { isStagingWorkerOrigin } from "./staging-environment";
-import { stagingDirectorySigningKey, verifyDirectorySession } from "./directory-session";
+import { stagingDirectorySigningKey } from "./directory-session";
+import { resolveDashboardSession } from "./dashboard-access";
 import { stagingBootstrapAttemptParam } from "./product-routes";
 
 const maxAge = 60 * 60;
@@ -16,7 +17,7 @@ export async function bootstrapStagingSuperAdmin(request: NextRequest) {
 
   const secret = process.env.MESSAGING_SERVICE_SECRET ?? "";
   const token = request.cookies.get(dashboardSessionCookieName)?.value ?? "";
-  if (secret.length < 32 || await verifyDirectorySession(secret, token, url.host)) return null;
+  if (secret.length < 32 || token.startsWith("otp_") || await resolveDashboardSession(secret, token, url.host)) return null;
 
   const session = await signIntegrationAccess(stagingDirectorySigningKey(secret),
     { kind: "directory" }, Date.now(), "tany-dashboard-v1", maxAge);

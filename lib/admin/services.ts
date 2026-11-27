@@ -250,14 +250,14 @@ export async function updateCatalogItem(
   itemId: string,
   input: unknown,
 ): Promise<AdminCatalogItem> {
-  const data = catalogInput(input),
-    ref = itemRef(businessId, itemId);
+  const data = catalogInput(input);
   if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
     const repo = await postgresRepositoryFor();
     if (!(await repo.getCatalogItem(businessId, documentId(itemId)))) throw new AdminValidationError({ form: "Catalog item not found in this business." });
     await repo.saveCatalogItem(businessId, documentId(itemId), data);
     return { id: itemId, ...data };
   }
+  const ref = itemRef(businessId, itemId);
   await adminDb.runTransaction(async (transaction) => {
     const business = await transaction.get(businessRef(businessId));
     const item = await transaction.get(ref);
@@ -275,7 +275,6 @@ export async function toggleCatalogAvailability(
   available: unknown,
 ) {
   const value = booleanInput(available, "available");
-  const ref = itemRef(businessId, itemId);
   if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
     const repo = await postgresRepositoryFor();
     const existing = await repo.getCatalogItem(businessId, documentId(itemId));
@@ -283,6 +282,7 @@ export async function toggleCatalogAvailability(
     await repo.saveCatalogItem(businessId, itemId, { ...existing, available: value });
     return;
   }
+  const ref = itemRef(businessId, itemId);
   await adminDb.runTransaction(async (transaction) => {
     const business = await transaction.get(businessRef(businessId));
     const item = await transaction.get(ref);
@@ -302,13 +302,13 @@ export async function deleteCatalogItem(
     throw new AdminValidationError({
       confirmation: "Type DELETE to confirm removal.",
     });
-  const ref = itemRef(businessId, itemId);
   if (databaseMode() === "postgres" || databaseMode() === "dual-write") {
     const repo = await postgresRepositoryFor();
     if (!(await repo.getCatalogItem(businessId, documentId(itemId)))) throw new AdminValidationError({ form: "Catalog item not found in this business." });
     await repo.deleteCatalogItem(businessId, documentId(itemId));
     return;
   }
+  const ref = itemRef(businessId, itemId);
   await adminDb.runTransaction(async (transaction) => {
     const business = await transaction.get(businessRef(businessId));
     const item = await transaction.get(ref);

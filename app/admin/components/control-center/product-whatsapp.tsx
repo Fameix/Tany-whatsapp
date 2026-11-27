@@ -87,12 +87,12 @@ export async function ProductWhatsApp({ product, query, includeTestData, local }
         embeddedSignup={embeddedSignupClientConfiguration()} dashboardHref={dashboardHref} signupEndpoint={`${endpoint}?action=signup`}
         connectLabel={status === "Configured · unverified" ? "Continue setup with Meta" : status === "Disconnected" || status === "Error" ? "Reconnect with Meta" : "Connect WhatsApp with Meta"} /></div>)}
     <section id="manage-connection" aria-label="Business profile" className={`${surface} flex flex-wrap items-center justify-between gap-3 p-4 sm:p-6`}>
-      <div><h2 className="font-semibold">Business profile</h2><p className="text-sm text-muted-foreground">Manage how this business appears on WhatsApp.</p></div>
+      <div><h2 className="font-semibold">Business profile</h2><p className="text-sm text-muted-foreground">Review profile readiness and manage the WhatsApp connection.</p></div>
       <div className="flex flex-wrap items-center gap-2">
         {canManage && connected && <WhatsAppAccountActions key={`${businessId}/${status}/${account?.at}`}
           businessId={businessId} status={status} hasConfiguredPhone={!!account?.phoneNumberId}
           setupHref={setupHref} reconnectHref={setupHref} disconnectEndpoint={`${endpoint}?action=disconnect`} />}
-        <Button asChild variant="outline"><Link href={`${root}/${id}/profile`}>Manage business profile</Link></Button>
+        <Button asChild variant="outline"><Link href={`${root}/${id}/profile`}>Review profile status</Link></Button>
       </div>
     </section>
     <details className={`${surface} p-4 sm:p-6`}>

@@ -59,6 +59,7 @@ function timestamp(value: unknown): string | null {
 export async function listWorkspaceRecords(
   businessId: string,
   collection: WorkspaceCollection,
+  filter?: (data: Record<string, unknown>) => boolean,
 ): Promise<WorkspaceRecord[]> {
   await requireBusiness(businessId);
   if (!isWorkspaceCollection(collection))
@@ -71,7 +72,7 @@ export async function listWorkspaceRecords(
     : (await adminDb.collection(collection).where("businessId", "==", businessId).get()).docs.map(doc => ({ ...doc.data(), id: doc.id, businessId } as Record<string, unknown> & { id: string; businessId: string }));
   return rows
     .flatMap((data) => {
-      if (data.businessId !== businessId) return [];
+      if (data.businessId !== businessId || (filter && !filter(data))) return [];
       const amount =
         collection === "orders"
           ? data.total

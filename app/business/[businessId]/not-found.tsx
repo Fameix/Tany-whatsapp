@@ -10,7 +10,7 @@ export default function WorkspaceNotFound() {
         The business or workspace page does not exist.
       </p>
       <Button asChild variant="outline">
-        <Link href="/admin/businesses">Back to Super Admin</Link>
+        <Link href="/dashboard">Back to your workspace</Link>
       </Button>
     </Card>
   );

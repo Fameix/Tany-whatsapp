@@ -11,6 +11,8 @@ async function main() {
   assert.ok(raw, "DATABASE_URL required");
   const url = new URL(raw);
   assert.doesNotMatch(`${url.hostname}${url.pathname}`, /prod|production|live/i, "production target forbidden");
+  const { isConfirmedStagingDatabase } = await import("../lib/admin/staging-environment.ts");
+  assert.ok(isConfirmedStagingDatabase({ ...process.env, MESSAGING_DATABASE: "postgres" }), "requires the confirmed staging database");
   const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
   const phone1 = `+919${String(Math.floor(Math.random() * 1e9)).padStart(9, "0")}`;
   const phone2 = `+919${String(Math.floor(Math.random() * 1e9)).padStart(9, "0")}`;
@@ -20,6 +22,7 @@ async function main() {
   const phone6 = `+919${String(Math.floor(Math.random() * 1e9)).padStart(9, "0")}`;
   const businessA = `otp-a-${suffix}`;
   const businessB = `otp-b-${suffix}`;
+  const unavailable = "otp-unavailable-" + suffix;
   const businessC = `otp-c-${suffix}`;
   const env = { target: process.env.MESSAGING_DATABASE, secret: process.env.TANY_PHONE_LOGIN_SECRET, serviceSecret: process.env.MESSAGING_SERVICE_SECRET, sid: process.env.TWILIO_ACCOUNT_SID, auth: process.env.TWILIO_AUTH_TOKEN, from: process.env.TWILIO_PHONE_NUMBER };
   process.env.MESSAGING_DATABASE = "postgres";
@@ -33,12 +36,14 @@ async function main() {
   const originalFetch = global.fetch;
   try {
     await client.query("insert into messaging_businesses(legacy_business_id,name,vertical,status,products,settings) values($1,'OTP Single','retail','active','[]'::jsonb,'{}'::jsonb),($2,'OTP Multi A','retail','active','[]'::jsonb,'{}'::jsonb),($3,'OTP Multi B','eats','active','[]'::jsonb,'{}'::jsonb),($4,'OTP Other Tenant','motos','active','[]'::jsonb,'{}'::jsonb)", [businessA, businessB, `${businessB}-two`, businessC]);
+    await client.query("insert into messaging_businesses(legacy_business_id,name,vertical,status,products,settings) values($1,'OTP Unavailable','retail','active',$2::jsonb,'{}'::jsonb)", [unavailable, JSON.stringify(["cabs"])]);
+    await client.query("update messaging_businesses set products=$2::jsonb where legacy_business_id=$1", [businessB, JSON.stringify(["eats", "cabs", "retail"])]);
     const insertUser = async (phone, businesses) => {
       const user = await client.query("insert into messaging_auth_users(phone,display_name) values($1,$2) returning id", [phone, `OTP ${phone.slice(-4)}`]);
       for (const businessId of businesses) await client.query("insert into messaging_auth_user_businesses(user_id,messaging_business_id) select $1,id from messaging_businesses where legacy_business_id=$2", [user.rows[0].id, businessId]);
     };
-    await insertUser(phone1, [businessA]);
-    await insertUser(phone2, [businessB, `${businessB}-two`]);
+    await insertUser(phone1, [businessA, unavailable]);
+    await insertUser(phone2, [businessB, `${businessB}-two`, unavailable]);
     await insertUser(phone3, [businessA]);
     await insertUser(phone4, [businessA]);
     await insertUser(phone5, [businessA]);
@@ -94,9 +99,14 @@ async function main() {
     assert.equal((await resolvePhoneLoginSession(multiple.token)).role, "selector");
     assert.equal((await listPhoneLoginBusinesses(multiple.token)).length, 2);
     await assert.rejects(() => selectPhoneLoginBusiness(multiple.token, businessC), error => error instanceof PhoneLoginError && error.code === "BUSINESS_FORBIDDEN");
+    await assert.rejects(() => selectPhoneLoginBusiness(multiple.token, unavailable), error => error instanceof PhoneLoginError && error.code === "BUSINESS_FORBIDDEN");
     await selectPhoneLoginBusiness(multiple.token, businessB);
     assert.deepEqual(await resolvePhoneLoginSession(multiple.token), { role: "business", businessId: businessB });
     console.log("PASS multiple-business selector and tenant isolation");
+    global.fetch = originalFetch;
+    const { getEnabledProducts } = await import("../lib/subscriptions/entitlements.ts");
+    assert.deepEqual(await getEnabledProducts(businessB), ["eats", "retail"]);
+
 
     const { signIntegrationAccess } = await import("../lib/integration/access.ts");
     const { resolveDashboardSession } = await import("../lib/admin/dashboard-access.ts");
@@ -107,7 +117,7 @@ async function main() {
     global.fetch = originalFetch;
     await client.query("delete from messaging_phone_login_challenges where phone = any($1)", [[phone1, phone2, phone3, phone4, phone5, phone6]]);
     await client.query("delete from messaging_auth_users where phone = any($1)", [[phone1, phone2, phone3, phone4, phone5, phone6]]);
-    await client.query("delete from messaging_businesses where legacy_business_id = any($1)", [[businessA, businessB, `${businessB}-two`, businessC]]);
+    await client.query("delete from messaging_businesses where legacy_business_id = any($1)", [[businessA, businessB, `${businessB}-two`, businessC, unavailable]]);
     await client.end();
     for (const [key, value] of Object.entries({ MESSAGING_DATABASE: env.target, TANY_PHONE_LOGIN_SECRET: env.secret, MESSAGING_SERVICE_SECRET: env.serviceSecret, TWILIO_ACCOUNT_SID: env.sid, TWILIO_AUTH_TOKEN: env.auth, TWILIO_PHONE_NUMBER: env.from })) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }

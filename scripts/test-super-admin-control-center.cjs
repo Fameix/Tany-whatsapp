@@ -126,7 +126,7 @@ async function main() {
   const center = await import("../lib/admin/product-center.ts");
   const { getOperationalOverview } = await import("../lib/admin/operational-overview.ts");
   const { adminProductPath, adminProductFromPath } = await import("../lib/admin/product-routes.ts");
-  const { productNavigation } = await import("../lib/admin/product-navigation.ts");
+  const { productNavigation, productWorkspaceRedirect } = await import("../lib/admin/product-navigation.ts");
   const { listProductTenants } = await import("../lib/admin/product-scope.ts");
   const { listProductRecords } = await import("../lib/admin/product-records.ts");
   const { canIncludeStagingTestData, isConfirmedStagingDatabase, isLocalStaging } = await import("../lib/admin/staging-environment.ts");
@@ -154,16 +154,17 @@ async function main() {
     assert.equal(adminProductFromPath(route)?.name, product.name);
     assert.equal(adminProductFromPath(`${route}/settings`)?.id, product.id);
     const links = productNavigation(product).flatMap(group => group.links);
-    assert.ok(links.every(link => link.href === route || link.href.startsWith(route + "/")));
+    assert.ok(links.every(link => link.href === route || link.href.startsWith(route + "/") ||
+      link.href === "/admin/system?product=" + product.id));
     const sections = links.map(link => link.section);
     if (product.status === "coming_soon") assert.deepEqual(sections, ["overview", "settings"]);
     else {
-      const modules = {
-        motos: ["dealers", "leads", "vehicles", "test-drives", "customers"],
-        eats: ["restaurants", "orders", "customers", "delivery"],
-        retail: ["stores", "orders", "products", "customers"],
-      };
-      assert.deepEqual(sections, ["overview", ...modules[product.id], "inbox", "templates", "automations", "campaigns", "whatsapp", "message-status", "webhook-health", "settings"]);
+      const directories = { motos: "dealers", eats: "restaurants", retail: "stores" };
+      assert.deepEqual(sections, ["overview", directories[product.id], "whatsapp", "message-status", "webhook-health", "staging", "settings"]);
+      for (const slug of ["inbox", "customers", "templates", "automations", "campaigns", "orders"]) {
+        assert.equal(productWorkspaceRedirect(product.id, slug), route + "/" + directories[product.id]);
+      }
+      assert.equal(productWorkspaceRedirect(product.id, "whatsapp"), null);
     }
   }
   assert.deepEqual(tanyProducts.map(p => p.id), Object.keys(verticalConfig), "same products and order as the registry");
@@ -222,7 +223,7 @@ async function main() {
   const pages = {
     "app/admin/page.tsx": "getOperationalOverview(null)",
     "app/admin/products/[product]/page.tsx": "getOperationalOverview(liveProduct,",
-    "app/admin/products/[product]/[section]/page.tsx": "getProductOperationsData(product.id,",
+    "app/admin/products/[product]/[section]/page.tsx": "getProductOperationsData(live,",
     "app/admin/businesses/page.tsx": "listProductBusinesses()",
     "app/admin/system/page.tsx": "listProductBusinesses()",
   };
@@ -236,8 +237,8 @@ async function main() {
   assert.match(data, /from messaging_businesses b/);
   const shell = fs.readFileSync("app/admin/components/admin-shell.tsx", "utf8");
   for (const label of ["Home", "Inbox", "Customers", "Automations", "Campaigns", "Templates", "WhatsApp", "Settings"]) assert.ok(shell.includes(`label: "${label}"`), `business navigation keeps ${label}`);
-  assert.match(shell, /function businessNavigation/, "business navigation is unchanged and separate");
-  console.log("PASS every Super Admin page checks access before data; Postgres only; business navigation unchanged");
+  assert.match(shell, /function businessNavigation/, "business navigation is separate");
+  console.log("PASS every Super Admin page checks access before data; Postgres only; operational navigation stays in the business workspace");
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

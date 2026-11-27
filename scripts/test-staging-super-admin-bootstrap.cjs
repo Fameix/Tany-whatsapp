@@ -56,6 +56,8 @@ async function main() {
       assertUnchanged(await visit(staging + route, { cookie: cookie + "=" + signed }));
     }
     assertUnchanged(await visit(staging + "/admin", { cookie: cookie + "=" + real }));
+    assertUnchanged(await visit(staging + "/admin", { cookie: cookie + "=" + business }));
+    assertUnchanged(await visit(staging + "/admin", { cookie: cookie + "=otp_fixture" }));
     const deepLink = await visit(staging + "/admin/products/retail/whatsapp?business=test-retail");
     assert.equal(new URL(deepLink.headers.get("location")).searchParams.get("business"), "test-retail");
     assertUnchanged(await visit(staging + "/admin", {}, "POST"));

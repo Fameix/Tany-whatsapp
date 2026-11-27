@@ -2,12 +2,13 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { cookies, headers } from "next/headers";
 import type { Metadata } from "next";
-import { AdminProductMenu, AdminProductMenuLoading } from "@/app/admin/components/control-center/product-selector";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { adminProductPath } from "@/lib/admin/product-routes";
 import { WorkspaceMenu } from "@/app/admin/components/workspace-menu";
 import { AdminShell } from "@/app/admin/components/admin-shell";
 import { LoadingPanel } from "@/app/admin/components/shared";
-import { loadBusiness } from "@/app/business/_components/load-business";
-import { isActiveTanyVertical } from "@/lib/messaging/vertical-config";
+import { workspaceProductContext } from "@/app/business/_components/workspace-product-context";
 import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { LocalWhatsAppNotice } from "@/app/business/_components/local-whatsapp-notice";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
@@ -52,15 +53,14 @@ async function WorkspaceLayout({
     throw error;
   }
   workspaceLog("[WORKSPACE_LOAD_START]", { businessId });
-  const business = await loadBusiness(businessId);
+  const { business, product, products } = await workspaceProductContext(businessId);
+  if (access === "business" && !product) notFound();
   workspaceLog("[WORKSPACE_BUSINESS_LOADED]", {
     businessId,
     vertical: business.vertical,
     active: business.active,
   });
   const shellBusiness = { ...business, settings: {}, whatsappPhoneNumberId: "" };
-  const { id, name, vertical, active } = shellBusiness;
-  const workspaceOptions = active && isActiveTanyVertical(vertical) ? [{ id, name, vertical, active }] : [];
   const localStaging = await localStagingWorkspace();
   workspaceLog("[WORKSPACE_SWITCHER_START]", { businessId });
   workspaceLog("[WORKSPACE_LAYOUT_COMPLETE]", { businessId });
@@ -68,15 +68,11 @@ async function WorkspaceLayout({
     <AdminShell
       key={business.id}
       business={shellBusiness}
-      workspaceSwitcher={
-        access === "admin" ? (
-          <Suspense fallback={<AdminProductMenuLoading />}>
-            <AdminProductMenu />
-          </Suspense>
-        ) : (
-          <WorkspaceMenu business={shellBusiness} options={workspaceOptions} canSeeAdmin={false} />
-        )
-      }
+      businessProduct={product}
+      workspaceSwitcher={<>
+        <WorkspaceMenu business={shellBusiness} product={product} products={products} />
+        {access === "admin" && <Link href={adminProductPath(product ?? business.vertical)} className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted">Back to product admin</Link>}
+      </>}
     >
       {localStaging && <div className="mb-4"><LocalWhatsAppNotice businessId={businessId} /></div>}
       {children}
