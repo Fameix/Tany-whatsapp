@@ -1,5 +1,6 @@
 import { isTanyVertical } from "@/lib/messaging/vertical-config";
-import { assertVerticalAutomationAllowed, templateForRegisteredProduct, templatesForEnabledProducts, type ActiveAutomationVertical } from "@/lib/automations/vertical-registry";
+import { assertVerticalAutomationAllowed, recipesForEnabledProducts, type ActiveAutomationVertical } from "@/lib/automations/vertical-registry";
+import { isSendableWithBodyParameters, templateContentFrom } from "@/lib/templates/model";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { automationPersistence } from "@/lib/automations/persistence";
@@ -88,9 +89,9 @@ export async function automationDashboard(businessId: string) {
   ]);
   return {
     vertical: product,
-    // The dashboard intentionally exposes only the active registry products.
-    // Legacy flows remain service-compatible without being offered as new templates.
-    automationTemplates: templatesForEnabledProducts(enabledProducts),
+    // Recipes set up a workflow only; message content always comes from the business's
+    // approved templates below.
+    recipes: recipesForEnabledProducts(enabledProducts),
     automations: automations.map((d) => {
       const v = d;
       return {
@@ -119,13 +120,23 @@ export async function automationDashboard(businessId: string) {
         } as Run;
       })
       .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? "")),
+    // This business's Templates library only: approved by Meta and sendable by the engine.
     templates: templates
-      .filter((d) => d.status === "approved")
-      .map((d) => ({
-        id: d.id,
-        name: String(d.name ?? "Template"),
-        body: String(d.body ?? ""),
-      })),
+      .filter((d) => d.businessId === businessId && d.status === "approved" && isSendableWithBodyParameters(d.components))
+      .map((d) => {
+        const content = templateContentFrom(d);
+        return {
+          id: d.id,
+          name: String(d.name ?? "Template"),
+          body: String(d.body ?? ""),
+          category: String(d.category ?? ""),
+          language: String(d.language ?? ""),
+          header: content.header,
+          footer: content.footer,
+          buttons: content.buttons,
+          examples: content.examples,
+        };
+      }),
   };
 }
 export async function saveAutomation(
@@ -208,18 +219,4 @@ export async function changeAutomation(
         ...(operation !== "pause" ? { publishedAt: now } : {}),
       });
     return automationId;
-}
-
-export async function createAutomationFromTemplate(
-  businessId: string,
-  templateId: string,
-) {
-  await requireAutomationBusiness(businessId);
-  const enabledProducts = await getEnabledProducts(businessId);
-  const selected = templateForRegisteredProduct(templateId);
-  if (!selected || !enabledProducts.includes(selected.vertical)) throw new ProductAccessError();
-  const { id: ignoredId, vertical: ignoredVertical, category: ignoredCategory, recommended: ignoredRecommended, active: ignoredActive, ...draft } = selected;
-  void ignoredId; void ignoredVertical; void ignoredCategory; void ignoredRecommended; void ignoredActive;
-  const id = await saveAutomation(businessId, undefined, draft, false, selected.vertical);
-  return { id, draft };
 }

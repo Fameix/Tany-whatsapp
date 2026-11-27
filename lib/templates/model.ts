@@ -123,14 +123,20 @@ export function isSendableWithBodyParameters(components: unknown): boolean {
 /** Restores editor content from a stored template row. */
 export function templateContentFrom(row: Record<string, unknown>): TemplateContent {
   const str = (value: unknown) => (typeof value === "string" ? value : "");
-  const buttons = Array.isArray(row.buttons) ? (row.buttons as TemplateButton[]).filter(button => button && typeof button.text === "string") : [];
+  // Rows written by the editor keep editor fields; others may only have Meta components.
+  const components = Array.isArray(row.components) ? (row.components as Array<Record<string, unknown>>) : [];
+  const component = (type: string) => components.find(c => String(c?.type ?? "").toUpperCase() === type);
+  const metaButtons = Array.isArray(component("BUTTONS")?.buttons) ? (component("BUTTONS")!.buttons as Array<Record<string, unknown>>).map(button => ({
+    type: String(button.type ?? "").toUpperCase(), text: str(button.text), url: str(button.url), phoneNumber: str(button.phone_number),
+  })) as TemplateButton[] : [];
+  const buttons = (Array.isArray(row.buttons) ? (row.buttons as TemplateButton[]) : metaButtons).filter(button => button && typeof button.text === "string");
   return {
     name: str(row.name),
     category: row.category === "marketing" ? "marketing" : "utility",
     language: str(row.language) || "en",
-    header: str(row.header),
+    header: str(row.header) || (String(component("HEADER")?.format ?? "TEXT").toUpperCase() === "TEXT" ? str(component("HEADER")?.text) : ""),
     body: str(row.body),
-    footer: str(row.footer),
+    footer: str(row.footer) || str(component("FOOTER")?.text),
     buttons: buttons.map(button => button.type === "URL" ? { type: "URL", text: button.text, url: str(button.url) } : button.type === "PHONE_NUMBER" ? { type: "PHONE_NUMBER", text: button.text, phoneNumber: str(button.phoneNumber) } : { type: "QUICK_REPLY", text: button.text }),
     examples: Array.isArray(row.examples) ? row.examples.map(value => str(value)) : [],
   };

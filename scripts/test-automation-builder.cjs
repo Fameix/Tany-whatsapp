@@ -332,13 +332,13 @@ async function main() {
   assert.equal(h.sends.length, 1);
   assert.equal(h.read(runPath).status, "completed");
   h = setup();
-  const templates = h.load("lib/automations/templates.ts").starterTemplates;
-  assert.equal(Object.keys(templates).length, 10);
+  // Business-built drafts; there is no built-in automation template catalogue.
   const s = h.load("lib/automations/service.ts");
-  for (const [key, t] of Object.entries(templates)) {
-    const v = structuredClone(t);
-    if (key === "appointment")
-      v.trigger.at = new Date(Date.now() + 3600000).toISOString();
+  for (const v of [
+    { name: "Greeting", description: "", trigger: { type: "keyword.matched", keywords: ["hi"] }, conditions: [], actions: [{ type: "text", text: "Hello from {{business_name}}" }] },
+    { name: "Order update", description: "", trigger: { type: "order.status.changed" }, conditions: [{ type: "order_status", value: "ready" }], actions: [{ type: "text", text: "Order {{order_id}} is ready." }] },
+    { name: "Reminder", description: "", trigger: { type: "schedule.triggered", at: new Date(Date.now() + 3600000).toISOString() }, conditions: [], actions: [{ type: "text", text: "See you soon." }] },
+  ]) {
     const id = await s.saveAutomation("a", undefined, v);
     assert.equal(h.read(`automations/${id}`).status, "draft");
   }
@@ -584,7 +584,7 @@ async function main() {
   }
   assert.ok(!JSON.stringify(runs(h)).includes("template-secret-test"));
   console.log(
-    "PASS: automation builder model, 10 editable templates, keyword/order/booking triggers, AND conditions, ordered actions, concurrent deduplication, handoff, isolation, pause/resume, safe failure logging, payment safety, durable delay, scheduled worker and authenticated worker boundary.",
+    "PASS: automation builder model, business-built drafts, keyword/order/booking triggers, AND conditions, ordered actions, concurrent deduplication, handoff, isolation, pause/resume, safe failure logging, payment safety, durable delay, scheduled worker and authenticated worker boundary.",
   );
 }
 main().catch((e) => {

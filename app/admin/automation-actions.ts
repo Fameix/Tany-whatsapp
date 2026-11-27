@@ -3,7 +3,6 @@ import { revalidatePath } from "next/cache";
 import {
   changeAutomation,
   saveAutomation,
-  createAutomationFromTemplate,
 } from "@/lib/automations/service";
 export async function saveAutomationAction(
   businessId: string,
@@ -48,24 +47,6 @@ export async function changeAutomationAction(
         !/secret|token|credential/i.test(error.message)
           ? error.message
           : "Could not update automation.",
-    };
-  }
-}
-
-export async function createAutomationFromTemplateAction(
-  businessId: string,
-  templateId: string,
-) {
-  try {
-    const result = await createAutomationFromTemplate(businessId, templateId);
-    revalidatePath(`/business/${encodeURIComponent(businessId)}`, "layout");
-    revalidatePath("/admin", "layout");
-    return { ok: true as const, ...result };
-  } catch {
-    return {
-      ok: false as const,
-      message:
-        "Could not create a draft. Choose a template for this business product.",
     };
   }
 }

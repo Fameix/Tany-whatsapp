@@ -48,7 +48,7 @@ async function Templates({ params, searchParams }: Props) {
       <header className="flex flex-col gap-4 pt-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Create and manage WhatsApp-approved messages for updates, follow-ups and campaigns.</p>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">Create and manage WhatsApp-approved messages.</p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {view === "mine" && <Link href={`${root}?view=starters`} className="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium transition-colors hover:bg-muted">Browse starter templates</Link>}

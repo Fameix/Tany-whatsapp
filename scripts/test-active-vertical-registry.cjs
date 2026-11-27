@@ -13,15 +13,13 @@ async function main() {
   assert.deepEqual(Object.keys(registry.verticalRegistry), ["eats", "retail", "motos"]);
   for (const vertical of ["eats", "retail", "motos"]) {
     const definition = registry.getVerticalDefinition(vertical);
-    const templates = registry.templatesForRegisteredVertical(vertical);
-    assert.ok(definition && templates.length > 0, `${vertical} has its configured templates`);
-    assert.ok(templates.every(template => template.vertical === vertical), `${vertical} has no template leakage`);
+    const recipes = registry.recipesForRegisteredVertical(vertical);
+    assert.ok(definition && recipes.length > 0, `${vertical} has its automation recipes`);
+    assert.ok(recipes.every(recipe => recipe.vertical === vertical), `${vertical} has no recipe leakage`);
     assert.ok(definition.supportedTriggers.length && definition.supportedActions.length);
   }
-  assert.deepEqual(registry.templatesForRegisteredVertical("salon"), []);
-  assert.ok(registry.templatesForRegisteredVertical("eats").some(t => t.name === "Start Order"));
-  assert.ok(registry.templatesForRegisteredVertical("motos").some(t => t.name === "Book Test Drive"));
-  assert.deepEqual(registry.templatesForRegisteredVertical("cabs"), []);
+  assert.deepEqual(registry.recipesForRegisteredVertical("salon"), []);
+  assert.deepEqual(registry.recipesForRegisteredVertical("cabs"), []);
   const simulator = h.load("app/admin/components/automations/chat-simulator.ts");
   for (const vertical of ["eats", "retail", "motos"]) {
     const scenario = simulator.previewScenarioKey(`${vertical}_welcome`, "Welcome", vertical);
@@ -47,20 +45,13 @@ async function main() {
   await service.saveAutomation("motos", undefined, { name: "Lead", description: "", trigger: { type: "keyword.matched", keywords: ["car"] }, conditions: [], actions: [{ type: "text", text: "Tell us the vehicle." }] });
   await assert.rejects(() => service.saveAutomation("motos", undefined, { name: "No payment", description: "", trigger: { type: "customer.message.received" }, conditions: [], actions: [{ type: "payment_link" }] }), /not available/);
   await assert.rejects(() => service.saveAutomation("cabs", undefined, { name: "Blocked", description: "", trigger: { type: "customer.message.received" }, conditions: [], actions: [{ type: "text", text: "Hello" }] }), entitlements.EntitlementError);
-  for (const [businessId, forbidden] of [["eats", "motos_welcome_lead"], ["motos", "eats_welcome_product"], ["retail", "motos_welcome_lead"]]) {
-    await assert.rejects(
-      () => service.createAutomationFromTemplate(businessId, forbidden),
-      error => error?.status === 403,
-      `${businessId} cannot bypass product template access`,
-    );
-  }
   const multiDashboard = await service.automationDashboard("multi");
-  assert.ok(multiDashboard.automationTemplates.length > 0);
-  assert.ok(multiDashboard.automationTemplates.every(template => ["eats", "retail"].includes(template.vertical)), "multi-product gallery excludes coming-soon products");
-  assert.ok(multiDashboard.automationTemplates.some(template => template.vertical === "eats"));
-  assert.ok(multiDashboard.automationTemplates.some(template => template.vertical === "retail"));
-  await assert.rejects(() => service.createAutomationFromTemplate("multi", "cabs_welcome_rider"), error => error?.status === 403, "Cabs templates are unavailable");
-  await assert.rejects(() => service.createAutomationFromTemplate("inactive", "eats_welcome_product"), entitlements.EntitlementError, "unknown/inactive vertical is rejected");
-  console.log("PASS: three active verticals, scoped templates, trigger/action enforcement, local previews, and coming-soon product gating.");
+  assert.ok(multiDashboard.recipes.length > 0);
+  assert.ok(multiDashboard.recipes.every(recipe => ["eats", "retail"].includes(recipe.vertical)), "multi-product recipes exclude coming-soon products");
+  assert.ok(multiDashboard.recipes.some(recipe => recipe.vertical === "eats"));
+  assert.ok(multiDashboard.recipes.some(recipe => recipe.vertical === "retail"));
+  assert.ok((await service.automationDashboard("motos")).recipes.every(recipe => recipe.vertical === "motos"), "a Motos business sees Motos recipes only");
+  await assert.rejects(() => service.automationDashboard("inactive"), entitlements.EntitlementError, "unknown/inactive vertical is rejected");
+  console.log("PASS: three active verticals, scoped recipes, trigger/action enforcement, local previews, and coming-soon product gating.");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -27,8 +27,8 @@ async function main() {
     assert.ok(catalog.some((item) => item.id === product.item && item.name === product.name), `${product.id} catalog fixture`);
     const dashboard = await automationDashboard(product.id);
     assert.equal(dashboard.vertical, product.vertical);
-    assert.ok(dashboard.automationTemplates.length > 0);
-    assert.ok(dashboard.automationTemplates.every((template) => template.vertical === product.vertical), `${product.id} automation isolation`);
+    assert.ok(dashboard.recipes.length > 0);
+    assert.ok(dashboard.recipes.every((recipe) => recipe.vertical === product.vertical), `${product.id} automation isolation`);
     console.log(`PASS ${product.id} loads only ${product.vertical} automations and catalog from Postgres`);
   }
   assert.equal(await getCatalogItem("test-retail", "chicken biriyani"), null);
