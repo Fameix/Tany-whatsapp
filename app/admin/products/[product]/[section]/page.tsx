@@ -15,7 +15,6 @@ import { adminProductPath } from "@/lib/admin/product-routes";
 import { productTestDataPreference } from "@/lib/admin/product-test-data";
 import { isActiveTanyVertical, tanyProducts } from "@/lib/messaging/vertical-config";
 import { ProductWhatsApp } from "@/app/admin/components/control-center/product-whatsapp";
-import { RetailWhatsApp } from "@/app/admin/components/control-center/retail-whatsapp";
 
 type Props = { params: Promise<{ product: string; section: string }>; searchParams: Promise<{ business?: string | string[]; setup?: string | string[] }> };
 
@@ -46,8 +45,6 @@ async function ProductSectionPage({ params, searchParams }: Props) {
   if (!live) notFound();
 
   const { include: includeTestData, local } = await productTestDataPreference();
-  // Tany Retail WhatsApp is test-retail's own WhatsApp page; Eats and Motos keep the product view.
-  if (section === "whatsapp" && live === "retail") return <RetailWhatsApp />;
   if (section === "whatsapp") return <ProductWhatsApp product={live} query={await searchParams} includeTestData={includeTestData} local={local} />;
 
   if (section === "message-status" || section === "webhook-health") {

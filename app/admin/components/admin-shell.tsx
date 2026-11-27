@@ -33,7 +33,7 @@ import type { AdminBusiness } from "@/lib/admin/types";
 import { adminProductFromPath, adminProductPath, stagingBootstrapAttemptParam } from "@/lib/admin/product-routes";
 import { productNavigation, type ProductSection } from "@/lib/admin/product-navigation";
 import { workspaceProductModules, type WorkspaceProductModule } from "@/lib/admin/workspace-products";
-import { retailWhatsAppAdminPath, workspacePathFor } from "@/lib/admin/retail-whatsapp-route";
+import { businessWorkspacePath } from "@/lib/admin/workspace-path";
 import type { ActiveTanyVertical, TanyProduct } from "@/lib/messaging/vertical-config";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -90,8 +90,7 @@ function adminGroups(product?: TanyProduct): { label?: string; links: NavLink[] 
 
 /** Business workspaces get a customer-facing hierarchy; technical pages stay reachable
  * from Settings → WhatsApp diagnostics and keep their existing URLs. */
-function businessNavigation(business: AdminBusiness, product: ActiveTanyVertical | null): { primary: NavLink[]; modules: NavLink[]; secondary: NavLink[] } {
-  const root = `/business/${encodeURIComponent(business.id)}`;
+function businessNavigation(business: AdminBusiness, product: ActiveTanyVertical | null, root = businessWorkspacePath(business.id)): { primary: NavLink[]; modules: NavLink[]; secondary: NavLink[] } {
   return {
     primary: [
       { label: "Home", href: root, icon: Home },
@@ -119,9 +118,9 @@ const businessPageLabels: Record<string, string> = {
 };
 const isActive = (pathname: string, link: NavLink) => pathname === link.href || !!link.match?.includes(pathname) || (!!link.nested && pathname.startsWith(`${link.href}/`));
 
-function linksFor(business?: AdminBusiness, product?: TanyProduct, businessProduct: ActiveTanyVertical | null = null): NavLink[] {
+function linksFor(business?: AdminBusiness, product?: TanyProduct, businessProduct: ActiveTanyVertical | null = null, workspaceRoot?: string): NavLink[] {
   if (business) {
-    const { primary, modules, secondary } = businessNavigation(business, businessProduct);
+    const { primary, modules, secondary } = businessNavigation(business, businessProduct, workspaceRoot);
     return [...primary, ...modules, ...secondary];
   }
   return adminGroups(product).flatMap((group) => group.links);
@@ -157,7 +156,7 @@ function adminNavigation(): Array<{ label?: string; links: NavLink[] }> {
   ];
 }
 function Navigation({ links }: { links: NavLink[] }) {
-  const pathname = workspacePathFor(usePathname());
+  const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   return (
     <SidebarMenu>
@@ -191,14 +190,16 @@ function WorkspaceSidebar({
   product,
   workspaceSwitcher,
   businessProduct = null,
+  workspaceRoot,
 }: {
   business?: AdminBusiness;
   product?: TanyProduct;
   workspaceSwitcher: React.ReactNode;
   businessProduct?: ActiveTanyVertical | null;
+  workspaceRoot?: string;
 }) {
   const loading = <div className="h-9 animate-pulse rounded-md bg-muted" />;
-  const groups = business ? businessNavigation(business, businessProduct) : null;
+  const groups = business ? businessNavigation(business, businessProduct, workspaceRoot) : null;
   return (
     <Sidebar collapsible="offcanvas">
       <div className="border-b p-2">{workspaceSwitcher}</div>
@@ -240,9 +241,9 @@ function WorkspaceSidebar({
     </Sidebar>
   );
 }
-function Breadcrumb({ business, product, businessProduct }: { business?: AdminBusiness; product?: TanyProduct; businessProduct: ActiveTanyVertical | null }) {
-  const pathname = workspacePathFor(usePathname());
-  const links = linksFor(business, product, businessProduct);
+function Breadcrumb({ business, product, businessProduct, workspaceRoot }: { business?: AdminBusiness; product?: TanyProduct; businessProduct: ActiveTanyVertical | null; workspaceRoot?: string }) {
+  const pathname = usePathname();
+  const links = linksFor(business, product, businessProduct, workspaceRoot);
   const root = links[0].href;
   const current =
     links.find((entry) => entry.href === pathname)?.label ??
@@ -276,16 +277,18 @@ export function AdminShell({
   business,
   workspaceSwitcher,
   businessProduct = null,
+  workspaceRoot,
 }: {
   children: React.ReactNode;
   business?: AdminBusiness;
   workspaceSwitcher: React.ReactNode;
   businessProduct?: ActiveTanyVertical | null;
+  /** Where the business workspace links point; /business/<id> unless shown inside Super Admin. */
+  workspaceRoot?: string;
 }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const router = useRouter();
-  const rawPathname = usePathname();
-  const pathname = workspacePathFor(rawPathname);
+  const pathname = usePathname();
   const product = business ? undefined : adminProductFromPath(pathname);
   const title = business?.name ?? product?.name ?? "Tany Super Admin";
   useEffect(() => {
@@ -299,20 +302,16 @@ export function AdminShell({
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
   useEffect(() => {
-    if (business) return;
     const url = new URL(window.location.href);
     if (!url.searchParams.has(stagingBootstrapAttemptParam)) return;
     url.searchParams.delete(stagingBootstrapAttemptParam);
     window.history.replaceState(window.history.state, "", url);
-  }, [business, pathname]);
+  }, [pathname]);
   const navigate = (href: string) => {
     setCommandOpen(false);
     router.push(href);
   };
-  const commands = linksFor(business, product, businessProduct);
-  // Tany Retail WhatsApp renders test-retail's own business workspace shell; the
-  // Super Admin chrome steps aside on that one path (sign-in is still enforced by the layout).
-  if (!business && rawPathname === retailWhatsAppAdminPath) return <>{children}</>;
+  const commands = linksFor(business, product, businessProduct, workspaceRoot);
   return (
     <TooltipProvider delayDuration={250}>
       <SidebarProvider
@@ -330,6 +329,7 @@ export function AdminShell({
           product={product}
           workspaceSwitcher={workspaceSwitcher}
           businessProduct={businessProduct}
+          workspaceRoot={workspaceRoot}
         />
         <SidebarInset className="min-w-0">
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 sm:px-6">
@@ -348,7 +348,7 @@ export function AdminShell({
                 </span>
               }
             >
-              <Breadcrumb business={business} product={product} businessProduct={businessProduct} />
+              <Breadcrumb business={business} product={product} businessProduct={businessProduct} workspaceRoot={workspaceRoot} />
             </Suspense>
             <div className="ml-auto flex items-center gap-3">
               <Button

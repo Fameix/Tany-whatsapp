@@ -29,6 +29,7 @@ import type { TanyVertical } from "@/lib/messaging/types";
 import { automationPlaceholders } from "@/lib/automations/placeholders";
 import { WhatsAppPreview } from "./whatsapp-preview";
 import { previewMessages } from "./preview-messages";
+import { useWorkspaceRoot } from "@/app/business/_components/workspace-root-context";
 import {
   saveAutomationAction,
   changeAutomationAction,
@@ -59,17 +60,21 @@ const contextSources: Array<{ token: (typeof automationPlaceholders)[number]; la
 ];
 
 const transactionalTriggers = ["order.created", "order.status.changed", "booking.created", "booking.status.changed", "payment.completed"];
-const templatesHref = (businessId?: string) => (businessId ? `/business/${encodeURIComponent(businessId)}/templates` : "#");
+function useTemplatesHref(businessId?: string) {
+  const root = useWorkspaceRoot(businessId ?? "");
+  return businessId ? `${root}/templates` : "#";
+}
 const triggerLabel = (type: string) => (triggerOptions as Record<string, string>)[type] ?? type;
 
 /** Explains why no template is usable yet; templates are never selectable from here. */
 function TemplateAvailabilityPanel({ unavailable, businessId, headline }: { unavailable: UnusableTemplate[]; businessId?: string; headline?: string }) {
+  const templatesHref = useTemplatesHref(businessId);
   const summary = templateAvailabilitySummary(unavailable);
   return (
     <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-left text-sm">
       <p className="font-medium">{headline ?? summary.headline}</p>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{summary.detail}</p>
-      <a href={templatesHref(businessId)} className="mt-2 inline-flex text-xs font-medium text-primary hover:underline">View templates</a>
+      <a href={templatesHref} className="mt-2 inline-flex text-xs font-medium text-primary hover:underline">View templates</a>
     </div>
   );
 }
@@ -78,6 +83,7 @@ function TemplateAvailabilityPanel({ unavailable, businessId, headline }: { unav
 function TemplatePicker({ templates, unavailable, businessId, triggerType, value, onChange }: {
   templates: ApprovedTemplate[]; unavailable: UnusableTemplate[]; businessId?: string; triggerType: string; value: string; onChange: (id: string) => void;
 }) {
+  const templatesHref = useTemplatesHref(businessId);
   const transactional = transactionalTriggers.includes(triggerType);
   const ordered = [...templates].sort((x, y) => (transactional ? Number(y.category === "utility") - Number(x.category === "utility") : 0) || x.name.localeCompare(y.name));
   const selected = templates.find((t) => t.id === value);
@@ -86,7 +92,7 @@ function TemplatePicker({ templates, unavailable, businessId, triggerType, value
     <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-sm font-medium">Approved WhatsApp template</p>
-        <a href={templatesHref(businessId)} className="text-xs font-medium text-muted-foreground hover:text-foreground">Manage templates</a>
+        <a href={templatesHref} className="text-xs font-medium text-muted-foreground hover:text-foreground">Manage templates</a>
       </div>
       <div role="radiogroup" aria-label="Approved WhatsApp template" className="grid max-h-80 gap-2 overflow-y-auto pr-1">
         {ordered.map((t) => (
@@ -119,6 +125,7 @@ function TemplatePicker({ templates, unavailable, businessId, triggerType, value
 function RecipeList({ recipes, templates, businessId, onApply, onScratch }: {
   recipes: AutomationRecipe[]; templates: ApprovedTemplate[]; businessId?: string; onApply: (recipe: AutomationRecipe) => void; onScratch: () => void;
 }) {
+  const templatesHref = useTemplatesHref(businessId);
   return (
     <div className="space-y-4">
       <div>
@@ -138,7 +145,7 @@ function RecipeList({ recipes, templates, businessId, onApply, onScratch }: {
                   <div className="flex gap-2"><dt className="w-16 shrink-0 text-muted-foreground">Sends</dt><dd className="min-w-0">Send WhatsApp template · suggested <span className="font-mono">{recipe.suggestedTemplate}</span></dd></div>
                 </dl>
                 <p className={`text-xs ${ready ? "text-emerald-700" : "text-muted-foreground"}`}>
-                  {ready ? "You have this template approved." : <>Needs an approved template. <a className="font-medium text-primary hover:underline" href={`${templatesHref(businessId)}?view=starters`}>Find it in Templates</a></>}
+                  {ready ? "You have this template approved." : <>Needs an approved template. <a className="font-medium text-primary hover:underline" href={`${templatesHref}?view=starters`}>Find it in Templates</a></>}
                 </p>
                 <div className="mt-auto pt-2"><Button size="sm" variant="outline" onClick={() => onApply(recipe)}>Use recipe</Button></div>
               </CardContent>

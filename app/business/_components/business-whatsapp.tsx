@@ -5,6 +5,7 @@ import { connectionStatusView } from "@/lib/whatsapp/connection-status-view";
 import { StatusDot, Surface } from "./home/home-primitives";
 import { WhatsAppDiagnostics, WhatsAppProfileLink } from "./whatsapp-diagnostics";
 import Link from "next/link";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 import { getBusinessProfile } from "@/lib/whatsapp/business-profile";
 import { isProfileIncomplete } from "@/lib/whatsapp/business-profile-model";
 import { localStagingWorkspace } from "@/lib/admin/product-test-data";
@@ -75,7 +76,7 @@ export async function BusinessWhatsApp({ businessId, detailed = false }: { busin
                   <p className="text-sm font-semibold">Complete your WhatsApp profile</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">Add a picture, description and contact details so customers recognise your business. Optional.</p>
                 </div>
-                <Link href={`/business/${encodeURIComponent(businessId)}/whatsapp/profile`} className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90">Complete profile</Link>
+                <Link href={`${await workspaceRoot(businessId)}/whatsapp/profile`} className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90">Complete profile</Link>
               </div>
             )}
             <WhatsAppProfileLink businessId={businessId} />

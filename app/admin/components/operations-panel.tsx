@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useWorkspaceRoot } from "@/app/business/_components/workspace-root-context";
 import { AccountMetadataEditor } from "@/app/admin/components/account-metadata-editor";
 import { useRouter } from "next/navigation";
 import { operationsMetrics } from "@/lib/admin/operations-metrics";
@@ -213,9 +214,8 @@ export function OperationsPanel({
   const [settings, setSettings] = useState(data.settings);
   const [rules, setRules] = useState(data.automations);
   const [pending, startTransition] = useTransition();
-  const root = data.businessId
-    ? `/business/${encodeURIComponent(data.businessId)}`
-    : adminRoot;
+  const workspaceRoot = useWorkspaceRoot(data.businessId ?? "");
+  const root = data.businessId ? workspaceRoot : adminRoot;
   useEffect(() => {
     if (!data.businessId) return;
     let cancelled = false;

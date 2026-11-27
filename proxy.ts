@@ -7,6 +7,8 @@ import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-sessi
 import { businessSetupRouteBusinessId, businessSetupRouteHeader, resolveWhatsAppSetupAccess } from "@/lib/admin/whatsapp-setup-access";
 import { isProductTestBusiness, productTestEntryMarker, productTestEntryPath } from "@/lib/admin/product-test-tenants";
 import { canIncludeStagingTestData, isLocalStaging } from "@/lib/admin/staging-environment";
+import { verifyDirectorySession } from "@/lib/admin/directory-session";
+import { retailWorkspaceTarget, workspaceAliasHeader } from "@/lib/admin/retail-workspace";
 
 const localCookieOptions = { httpOnly: true, secure: false, sameSite: "lax" as const, path: "/", maxAge: 7 * 24 * 60 * 60 };
 
@@ -38,12 +40,21 @@ export async function proxy(request: NextRequest) {
       request.cookies.set("tany-dashboard-dev", credential);
     }
   }
+  // Super Admin → Tany Retail shows test-retail's workspace (lib/admin/retail-workspace). Anyone
+  // else falls through to the admin route tree, which asks for Super Admin sign-in.
+  const aliasTarget = area === "admin" ? retailWorkspaceTarget(request.nextUrl.pathname) : null;
+  const alias = aliasTarget && await verifyDirectorySession(process.env.MESSAGING_SERVICE_SECRET ?? "",
+    request.cookies.get(dashboardSessionCookieName)?.value ?? "", request.headers.get("host") ?? hostname) ? aliasTarget : null;
   const requestHeaders = new Headers(request.headers);
   // Never trust a client-supplied marker. Only the canonical setup path can use a setup-only cookie in its layout.
   requestHeaders.delete(businessSetupRouteHeader);
+  requestHeaders.delete(workspaceAliasHeader);
   if (setupBusiness) requestHeaders.set(businessSetupRouteHeader, encodeURIComponent(setupBusiness));
-  const response = credential || setupBusiness || request.headers.has(businessSetupRouteHeader)
-    ? NextResponse.next({ request: { headers: requestHeaders } }) : NextResponse.next();
+  if (alias) requestHeaders.set(workspaceAliasHeader, "1");
+  const response = alias
+    ? NextResponse.rewrite(new URL(alias + request.nextUrl.search, request.url), { request: { headers: requestHeaders } })
+    : credential || setupBusiness || request.headers.has(businessSetupRouteHeader) || request.headers.has(workspaceAliasHeader)
+      ? NextResponse.next({ request: { headers: requestHeaders } }) : NextResponse.next();
   if (credential) response.cookies.set("tany-dashboard-dev", credential, localCookieOptions);
   response.headers.set("Cache-Control", "private, no-store");
   return response;

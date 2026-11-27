@@ -15,6 +15,7 @@ import { renderTemplateBody } from "@/lib/templates/model";
 import { listBusinessTemplates, TemplateStoreUnavailableError } from "@/lib/templates/repository";
 import { startersFor } from "@/lib/templates/starters";
 import { localStagingWorkspace } from "@/lib/admin/product-test-data";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 
 type Props = { params: Promise<{ businessId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -24,7 +25,7 @@ async function Templates({ params, searchParams }: Props) {
   if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;
   const business = await loadBusiness(businessId);
   const view = (await searchParams).view === "starters" ? "starters" : "mine";
-  const root = `/business/${encodeURIComponent(businessId)}/templates`;
+  const root = `${await workspaceRoot(businessId)}/templates`;
   const productLabel = verticalConfig[business.vertical]?.label ?? "your business";
 
   let templates;

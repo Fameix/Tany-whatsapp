@@ -10,6 +10,7 @@ import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { getPostgresBusinessAccount } from "@/lib/admin/postgres-directory";
 import { emptyTemplate } from "@/lib/templates/model";
 import { getBusinessTemplate } from "@/lib/templates/repository";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 
 type Props = { params: Promise<{ businessId: string; templateId: string }> };
 
@@ -18,7 +19,7 @@ async function Editor({ params }: Props) {
   const { businessId, templateId } = await params;
   if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;
   await loadBusiness(businessId);
-  const root = `/business/${encodeURIComponent(businessId)}/templates`;
+  const root = `${await workspaceRoot(businessId)}/templates`;
   const [stored, account] = await Promise.all([
     templateId === "new" ? Promise.resolve(null) : getBusinessTemplate(businessId, templateId),
     getPostgresBusinessAccount(businessId),

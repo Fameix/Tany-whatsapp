@@ -104,9 +104,8 @@ async function automationSummary(businessId: string, now: number): Promise<HomeA
 }
 
 /** Everything on Home is read for this one business; nothing is aggregated across tenants. */
-export async function getBusinessHome(business: { id: string; name: string; vertical: TanyVertical }): Promise<BusinessHome> {
+export async function getBusinessHome(business: { id: string; name: string; vertical: TanyVertical }, root = `/business/${encodeURIComponent(business.id)}`): Promise<BusinessHome> {
   const now = Date.now();
-  const root = `/business/${encodeURIComponent(business.id)}`;
   const [operations, connection, automations] = await Promise.all([
     getOperationsData(business.id),
     getClientWhatsAppConnection(business.id),

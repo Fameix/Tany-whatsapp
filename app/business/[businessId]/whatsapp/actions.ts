@@ -1,4 +1,5 @@
 "use server";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 import { EntitlementError } from "@/lib/subscriptions/entitlements";
 
 import { prepareWhatsAppTest } from "@/lib/admin/whatsapp-service";
@@ -50,7 +51,7 @@ export async function previewWhatsAppTest(
 export async function requestWhatsAppSetup(businessId: string) {
   try {
     await requireDashboardAccess(businessId);
-    return { ok: true, message: "Continue to WhatsApp setup.", url: `/business/${encodeURIComponent(businessId)}/whatsapp/setup` };
+    return { ok: true, message: "Continue to WhatsApp setup.", url: `${await workspaceRoot(businessId)}/whatsapp/setup` };
   } catch (error) {
     if (error instanceof EntitlementError) return { ok: false, ...error.details };
     return { ok: false, message: "You do not have access to this business." };

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useWorkspaceRoot } from "@/app/business/_components/workspace-root-context";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -40,8 +41,9 @@ export function WhatsAppSetupWizard({ businessId, initial }: { businessId: strin
     finally { setPending(false); }
   }
   const connected = account?.status === "connected";
+  const workspaceRoot = useWorkspaceRoot(businessId);
   return <div className="max-w-3xl space-y-6">
-    <div><Link className="text-sm text-muted-foreground underline" href={`/business/${encodeURIComponent(businessId)}/whatsapp`}>WhatsApp Automation</Link>
+    <div><Link className="text-sm text-muted-foreground underline" href={`${workspaceRoot}/whatsapp`}>WhatsApp Automation</Link>
       <h1 className="mt-3 text-2xl font-semibold">{connected ? "WhatsApp is connected" : "Set up WhatsApp"}</h1>
       {connected && <p className="mt-2 text-muted-foreground">Automation is ready</p>}
     </div>

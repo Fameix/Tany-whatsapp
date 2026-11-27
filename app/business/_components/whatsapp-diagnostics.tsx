@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Activity, CheckCheck, ChevronRight, Smartphone, Store, type LucideIcon } from "lucide-react";
 import { Surface } from "./home/home-primitives";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 
 /** Settings → WhatsApp → Business Profile. */
-export function WhatsAppProfileLink({ businessId }: { businessId: string }) {
+export async function WhatsAppProfileLink({ businessId }: { businessId: string }) {
   return (
     <Surface className="overflow-hidden">
-      <Link href={`/business/${encodeURIComponent(businessId)}/whatsapp/profile`} className="group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50">
+      <Link href={`${await workspaceRoot(businessId)}/whatsapp/profile`} className="group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50">
         <Store className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">Business profile</span>
@@ -19,8 +20,8 @@ export function WhatsAppProfileLink({ businessId }: { businessId: string }) {
 }
 
 /** Technical WhatsApp pages, kept off primary navigation (Settings → WhatsApp → Diagnostics). */
-export function WhatsAppDiagnostics({ businessId }: { businessId: string }) {
-  const root = `/business/${encodeURIComponent(businessId)}`;
+export async function WhatsAppDiagnostics({ businessId }: { businessId: string }) {
+  const root = await workspaceRoot(businessId);
   const items: Array<{ label: string; description: string; href: string; icon: LucideIcon }> = [
     { label: "Message status", description: "Delivery and read status of recent messages", href: `${root}/message-status`, icon: CheckCheck },
     { label: "Webhook health", description: "Whether WhatsApp messages are reaching Tany", href: `${root}/webhook-health`, icon: Activity },

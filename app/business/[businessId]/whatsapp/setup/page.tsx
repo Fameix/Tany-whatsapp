@@ -8,20 +8,21 @@ import { loadBusiness } from "@/app/business/_components/load-business";
 import { WhatsAppConnection } from "@/app/dashboard/messaging/_components/whatsapp-connection";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
-import { businessWhatsAppDashboardPath, resolveWhatsAppSetupAccess } from "@/lib/admin/whatsapp-setup-access";
+import { resolveWhatsAppSetupAccess } from "@/lib/admin/whatsapp-setup-access";
 import { getClientWhatsAppConnection } from "@/lib/whatsapp/client-connection";
 import { embeddedSignupClientConfiguration } from "@/lib/whatsapp/embedded-signup-service";
 import { isProductTestBusiness } from "@/lib/admin/product-test-tenants";
 import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { canViewBusiness } from "@/app/business/_components/business-access";
 import { stagingWorkspaceUrl } from "@/lib/admin/staging-environment";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 
 /** Business-scoped Meta Embedded Signup. Business context comes from the route and is
  * authorized only by a matching business session or business setup session. */
 async function BusinessWhatsAppSetup({ params }: { params: Promise<{ businessId: string }> }) {
   await connection();
   const { businessId } = await params;
-  const dashboardHref = businessWhatsAppDashboardPath(businessId);
+  const dashboardHref = `${await workspaceRoot(businessId)}/whatsapp`;
   const local = await localStagingWorkspace();
   if (local) {
     if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;

@@ -11,6 +11,10 @@ import { LoadingPanel } from "@/app/admin/components/shared";
 import { workspaceProductContext } from "@/app/business/_components/workspace-product-context";
 import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { LocalWhatsAppNotice } from "@/app/business/_components/local-whatsapp-notice";
+import { WorkspaceRootProvider } from "@/app/business/_components/workspace-root-context";
+import { SuperAdminSignInRequired } from "@/app/admin/components/super-admin-sign-in-required";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
+import { isWorkspaceAlias, workspaceRoot } from "@/lib/admin/workspace-root";
 import { DashboardAccessRequired } from "@/app/admin/components/dashboard-access-required";
 import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { whatsappSetupSessionCookieName } from "@/lib/admin/whatsapp-setup-session";
@@ -36,6 +40,9 @@ async function WorkspaceLayout({
 }) {
   await connection();
   const { businessId } = await params;
+  // A Super Admin alias (Tany Retail → test-retail) is never served to anyone else.
+  const alias = await isWorkspaceAlias();
+  if (alias && !(await isSuperAdmin())) return <SuperAdminSignInRequired />;
   let access;
   try {
     access = await requireDashboardAccess(businessId);
@@ -62,6 +69,7 @@ async function WorkspaceLayout({
   });
   const shellBusiness = { ...business, settings: {}, whatsappPhoneNumberId: "" };
   const localStaging = await localStagingWorkspace();
+  const root = await workspaceRoot(businessId);
   workspaceLog("[WORKSPACE_SWITCHER_START]", { businessId });
   workspaceLog("[WORKSPACE_LAYOUT_COMPLETE]", { businessId });
   return (
@@ -69,13 +77,16 @@ async function WorkspaceLayout({
       key={business.id}
       business={shellBusiness}
       businessProduct={product}
+      workspaceRoot={root}
       workspaceSwitcher={<>
         <WorkspaceMenu business={shellBusiness} product={product} products={products} />
-        {access === "admin" && <Link href={adminProductPath(product ?? business.vertical)} className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted">Back to product admin</Link>}
+        {access === "admin" && <Link href={alias ? "/admin/products" : adminProductPath(product ?? business.vertical)} className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted">{alias ? "Back to Super Admin" : "Back to product admin"}</Link>}
       </>}
     >
-      {localStaging && <div className="mb-4"><LocalWhatsAppNotice businessId={businessId} /></div>}
-      {children}
+      <WorkspaceRootProvider businessId={businessId} root={root}>
+        {localStaging && <div className="mb-4"><LocalWhatsAppNotice businessId={businessId} /></div>}
+        {children}
+      </WorkspaceRootProvider>
     </AdminShell>
   );
 }

@@ -5,7 +5,6 @@ import { isActiveTanyVertical, tanyProducts } from "@/lib/messaging/vertical-con
 import { productTestDataPreference } from "@/lib/admin/product-test-data";
 import { isSuperAdmin } from "@/lib/admin/super-admin-session";
 import { TestDataControl } from "@/app/admin/components/control-center/test-data-control";
-import { HiddenOnRetailWhatsApp } from "@/app/admin/components/control-center/hidden-on-retail-whatsapp";
 
 export async function generateMetadata({ params }: { params: Promise<{ product: string }> }): Promise<Metadata> {
   const { product } = await params;
@@ -23,7 +22,7 @@ async function ProductTestControl({ params }: { params: Promise<{ product: strin
 
 export default function ProductLayout({ children, params }: { children: React.ReactNode; params: Promise<{ product: string }> }) {
   return <>
-    <HiddenOnRetailWhatsApp><Suspense fallback={null}><ProductTestControl params={params} /></Suspense></HiddenOnRetailWhatsApp>
+    <Suspense fallback={null}><ProductTestControl params={params} /></Suspense>
     {children}
   </>;
 }

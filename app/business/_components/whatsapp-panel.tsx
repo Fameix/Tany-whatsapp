@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useWorkspaceRoot } from "@/app/business/_components/workspace-root-context";
 import { useActionState, useState } from "react";
 import {
   Activity,
@@ -243,7 +244,7 @@ function TestMessage({ businessId }: { businessId: string }) {
 }
 export function WhatsAppPanel({ data }: { data: WhatsAppOverview }) {
   const router = useRouter();
-  const settingsHref = `/business/${encodeURIComponent(data.businessId)}/settings`;
+  const settingsHref = `${useWorkspaceRoot(data.businessId)}/settings`;
   const connection = !data.businessActive
     ? "Business inactive"
     : !data.phoneNumberId

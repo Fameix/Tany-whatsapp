@@ -10,6 +10,7 @@ import { BusinessProfileError, getBusinessProfile } from "@/lib/whatsapp/busines
 import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { stagingWorkspaceUrl } from "@/lib/admin/staging-environment";
 import { getPostgresBusinessAccount } from "@/lib/admin/postgres-directory";
+import { workspaceRoot } from "@/lib/admin/workspace-root";
 
 type Props = { params: Promise<{ businessId: string }> };
 
@@ -39,7 +40,7 @@ async function Profile({ params }: Props) {
     return <ProfileEditor businessId={businessId} initial={null} storedAccount={account ?? undefined}
       stagingHref={`${stagingWorkspaceUrl(businessId)}/whatsapp/profile`} />;
   }
-  const whatsapp = `/business/${encodeURIComponent(businessId)}/whatsapp`;
+  const whatsapp = `${await workspaceRoot(businessId)}/whatsapp`;
   const result = await getBusinessProfile(businessId).catch((error: unknown) => {
     if (error instanceof BusinessProfileError) return error;
     throw error;
