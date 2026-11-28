@@ -179,6 +179,13 @@ function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** One business's operations data, labelled with the given workspace name. */
+function withBusinessName(data: OperationsData, name: string): OperationsData {
+  if (!data.businessId || !name) return data;
+  const relabel = <T extends { business: string }>(rows: T[]) => rows.map(row => ({ ...row, business: name }));
+  return { ...data, businessName: name, messages: relabel(data.messages), conversations: relabel(data.conversations), contacts: relabel(data.contacts), templates: relabel(data.templates), campaigns: relabel(data.campaigns), accounts: relabel(data.accounts) };
+}
+
 export function OperationsPanel({
   data: initialData,
   section,
@@ -226,14 +233,17 @@ export function OperationsPanel({
         const result = await response.json();
         if (cancelled) return;
         if (response.ok) {
-          setData(result.data);
-          setSelected(previous => result.data.conversations.find((c: OperationConversation) => c.id === previous?.id) ?? result.data.conversations[0] ?? null);
+          // Keep the name this workspace was opened with (e.g. Tany Retail inside Super Admin); the
+          // poll returns one business's raw rows.
+          const next = withBusinessName(result.data, initialData.businessName);
+          setData(next);
+          setSelected(previous => next.conversations.find((c: OperationConversation) => c.id === previous?.id) ?? next.conversations[0] ?? null);
         } else if (["UPGRADE_REQUIRED", "SETUP_REQUIRED", "UNAUTHORIZED"].includes(result.code)) router.refresh();
       } catch { /* A later poll can recover; existing messages remain readable. */ }
     };
     const timer = setInterval(() => void refresh(), 8000);
     return () => { cancelled = true; controller.abort(); clearInterval(timer); };
-  }, [client, data.businessId, section, router]);
+  }, [client, data.businessId, section, router, initialData.businessName]);
   useEffect(() => {
     if (!selected || section !== "inbox" || !selected.unread) return;
     void fetch(`/api/${client ? "dashboard" : "admin"}/operations?businessId=${encodeURIComponent(selected.businessId)}`, {

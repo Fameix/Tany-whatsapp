@@ -187,7 +187,8 @@ async function businessOperations(
       messageId: str(data.messageId, 200) || id,
       phone: str(data.customerPhone || data.from, 30),
       direction: data.direction as "incoming" | "outgoing",
-      type: choose(
+      // A WhatsApp sign-in code shows its label, "Sign-in code (<template>)"; the code is never stored.
+      type: data.purpose === "sign_in_code" && str(data.body, 120) ? str(data.body, 120) : choose(
         data.replyType ?? data.type,
         [
           "text",
@@ -219,7 +220,7 @@ async function businessOperations(
       at: at(data.createdAt),
       failure:
         data.processingStatus === "failed" || data.deliveryStatus === "failed"
-          ? "Processing or delivery failed. Check restricted server logs for details."
+          ? str(data.failureReason, 800) || "Processing or delivery failed. Check restricted server logs for details."
           : "",
     }))
     .sort(

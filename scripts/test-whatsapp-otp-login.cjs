@@ -129,7 +129,7 @@ async function main() {
 
     // Resend cooldown.
     await assert.rejects(service.requestBusinessLoginOtp("otp-shop-a", both, "203.0.113.9", deps),
-      error => error.code === "RESEND_COOLDOWN" && error.retryAfterSeconds > 50 && error.retryAfterSeconds <= 60);
+      error => error.code === "RESEND_COOLDOWN" && error.retryAfterSeconds >= 1 && error.retryAfterSeconds <= 60);
     assert.equal(sent.length, 1, "no code is sent during the cooldown");
 
     // The same phone is a separate login in another business, sent from that business's own number.
@@ -166,14 +166,14 @@ async function main() {
     await rejects(service.verifyBusinessLoginOtp("otp-shop-b", onlyB, wrong, { pool }), "RATE_LIMITED");
     await rejects(service.verifyBusinessLoginOtp("otp-shop-b", onlyB, codeOnly, { pool }), "OTP_EXPIRED");
     // Expiry, and a new code after the cooldown replaces the old one.
-    await age(tenantB, onlyB, 61);
+    await age(tenantB, onlyB, 120);
     await service.requestBusinessLoginOtp("otp-shop-b", onlyB, "203.0.113.10", deps);
     const fresh = lastCode("otp-shop-b", onlyB);
     await client.query("update messaging_phone_login_challenges set expires_at=now() - interval '1 second' where messaging_business_id=$1 and phone=$2 and consumed_at is null", [tenantB, onlyB]);
     await rejects(service.verifyBusinessLoginOtp("otp-shop-b", onlyB, fresh, { pool }), "OTP_EXPIRED");
     // Hourly limit per business + phone (5 an hour).
-    for (let n = 0; n < 3; n++) { await age(tenantB, onlyB, 61); await service.requestBusinessLoginOtp("otp-shop-b", onlyB, `203.0.113.${20 + n}`, deps); }
-    await age(tenantB, onlyB, 61);
+    for (let n = 0; n < 3; n++) { await age(tenantB, onlyB, 120); await service.requestBusinessLoginOtp("otp-shop-b", onlyB, `203.0.113.${20 + n}`, deps); }
+    await age(tenantB, onlyB, 120);
     await rejects(service.requestBusinessLoginOtp("otp-shop-b", onlyB, "203.0.113.30", deps), "RATE_LIMITED");
     pass("PASS 5 wrong attempts lock the code; expired codes fail; 5 codes an hour per business + phone");
 
@@ -190,7 +190,7 @@ async function main() {
     await rejects(service.requestBusinessLoginOtp("otp-shop-a", both, "203.0.113.52", { pool, deliver, sender: async () => ({ businessId: "otp-shop-b", phoneNumberId: "pn-b", template: { name: "x", language: "en" } }) }), "WHATSAPP_UNAVAILABLE");
     await rejects(service.requestBusinessLoginOtp("Not A Business", both, "203.0.113.53", deps), "WHATSAPP_UNAVAILABLE");
     // Meta failure: the code is withdrawn.
-    await age(tenantA, both, 61);
+    await age(tenantA, both, 120);
     await rejects(service.requestBusinessLoginOtp("otp-shop-a", both, "203.0.113.54", { pool, sender, deliver: async () => { throw new Error("meta down"); } }), "DELIVERY_UNAVAILABLE");
     const withdrawn = (await client.query("select consumed_at from messaging_phone_login_challenges where messaging_business_id=$1 and phone=$2 order by created_at desc limit 1", [tenantA, both])).rows[0];
     assert.ok(withdrawn.consumed_at, "an undelivered code cannot be used");

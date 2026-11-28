@@ -4,6 +4,7 @@ import type { BusinessRecord, EntitlementRecord, SubscriptionEntitlementWrite, S
 import { localMessagingBusinessId } from "./postgres-business-map";
 import { postgresDb, postgresTransactionPool } from "./postgres-client";
 import { decryptPostgresContactPhone, postgresContactProjection } from "./postgres-contact-privacy";
+import { formatDeliveryError, type DeliveryError } from "@/lib/whatsapp/delivery-error";
 
 type DbRow = Record<string, unknown>;
 const rows = async (query: ReturnType<ReturnType<typeof postgresDb>["execute"]>) => (await query as unknown as { rows?: DbRow[] }).rows ?? [];
@@ -374,8 +375,18 @@ export class PostgresMessagingRepository {
   }
   async listRuntimeMessages(businessId: string): Promise<TenantRow[]> {
     const business = await this.businessRow(businessId);
-    const result = await rows(postgresDb().execute(sql`select meta_message_id,direction,type,body,payload,processing_status,delivery_status,provider_timestamp,created_at,processed_at from whatsapp_messages where messaging_business_id=${business.id} order by created_at`));
-    return result.map(row => ({ ...(row.payload && typeof row.payload === "object" ? row.payload as TenantRow : {}), id: text(row.meta_message_id), businessId, messageId: text(row.meta_message_id), direction: text(row.direction), type: text(row.type), text: text(row.body), body: text(row.body), processingStatus: text(row.processing_status), deliveryStatus: text(row.delivery_status), whatsappTimestamp: row.provider_timestamp, createdAt: row.created_at, updatedAt: row.processed_at }));
+    const result = await rows(postgresDb().execute(sql`select meta_message_id,direction,type,body,payload,processing_status,delivery_status,failure_reason,provider_timestamp,created_at,processed_at from whatsapp_messages where messaging_business_id=${business.id} order by created_at`));
+    return result.map(row => ({ ...(row.payload && typeof row.payload === "object" ? row.payload as TenantRow : {}), id: text(row.meta_message_id), businessId, messageId: text(row.meta_message_id), direction: text(row.direction), type: text(row.type), text: text(row.body), body: text(row.body), processingStatus: text(row.processing_status), deliveryStatus: text(row.delivery_status), failureReason: text(row.failure_reason), whatsappTimestamp: row.provider_timestamp, createdAt: row.created_at, updatedAt: row.processed_at }));
+  }
+
+  /** A WhatsApp sign-in code sent from this business's number: Meta's message id and a label only.
+   * The code is never stored; delivery receipts attach to this row by its message id. */
+  async storeSignInCodeMessage(businessId: string, input: { messageId: string; phone: string; template: string }) {
+    const business = await this.businessRow(businessId);
+    const label = `Sign-in code (${input.template})`;
+    await postgresDb().execute(sql`insert into whatsapp_messages (messaging_business_id, meta_message_id, direction, type, body, payload, processing_status, delivery_status, processed_at, updated_at)
+      values (${business.id}, ${input.messageId}, 'outgoing', 'template', ${label}, ${JSON.stringify({ customerPhone: input.phone, purpose: "sign_in_code", template: input.template })}::jsonb, 'processed', 'sent', now(), now())
+      on conflict (meta_message_id) do nothing`);
   }
 
   /** Phase 3 message state: the row is both the idempotency record and lease. */
@@ -459,11 +470,13 @@ export class PostgresMessagingRepository {
       values (${business.id}, ${eventId}, ${row.messageId}, ${row.status}, ${JSON.stringify(safePayload(row))}::jsonb, ${asDate(row.at)}) on conflict (meta_event_id) do nothing returning id`));
     if (!inserted[0]) return false;
     const delivery = text(row.status);
+    // Meta's failure reason (code · title · details) replaces any earlier reason for this message.
+    const failure = delivery === "failed" && row.error && typeof row.error === "object" ? formatDeliveryError(row.error as DeliveryError) || null : null;
     await postgresDb().execute(sql`update whatsapp_messages set delivery_status = case
       when ${delivery} = 'read' then 'read'
       when ${delivery} = 'delivered' and delivery_status <> 'read' then 'delivered'
       when ${delivery} = 'failed' and delivery_status not in ('read', 'delivered') then 'failed'
-      else delivery_status end, updated_at = now()
+      else delivery_status end, failure_reason = coalesce(${failure}, failure_reason), updated_at = now()
       where messaging_business_id = ${business.id} and meta_message_id = ${row.messageId} and direction = 'outgoing'`);
     return true;
   }

@@ -5,6 +5,7 @@ import { databaseMode, postgresShadowWrite, repositoryFor } from "@/lib/data/rep
 import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
 import { d1For } from "@/worker/bindings";
 import { documentId, serverTimestamp } from "@/lib/messaging/services/shared";
+import { deliveryErrorFrom } from "@/lib/whatsapp/delivery-error";
 const rank: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 0 };
 export function receiptStatus(current: string, next: string) {
   if (current === "failed" && next === "sent") return current;
@@ -27,8 +28,11 @@ export async function recordDeliveryReceipts(businessId: string, statuses: unkno
       continue;
     }
     if (databaseMode() === "dual-write" || databaseMode() === "postgres") {
+      // Meta's reason for a failure (code, title, details) is kept so Message Status can show it.
+      const error = event.status === "failed" ? deliveryErrorFrom(event) : null;
+      console.info("[WHATSAPP_DELIVERY_STATUS]", { messageId: event.id, status: event.status, errorCode: error?.code ?? null });
       try {
-        await new PostgresMessagingRepository().recordRuntimeDeliveryEvent({ id: eventId, businessId, messageId: event.id, status: event.status, at: new Date(Number(event.timestamp) * 1000).toISOString(), createdAt: Date.now() });
+        await new PostgresMessagingRepository().recordRuntimeDeliveryEvent({ id: eventId, businessId, messageId: event.id, status: event.status, at: new Date(Number(event.timestamp) * 1000).toISOString(), createdAt: Date.now(), ...(error ? { error } : {}) });
       } catch (error) {
         console.warn("[POSTGRES_RECEIPT_PERSISTENCE_FAILED]", { businessId, code: error instanceof Error ? error.message.split(":")[0].slice(0, 80) : "UNKNOWN" });
         throw error;

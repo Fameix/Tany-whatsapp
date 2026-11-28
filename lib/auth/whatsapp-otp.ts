@@ -1,5 +1,6 @@
 import "server-only";
-import { runtimeRepositoryFor } from "@/lib/data/repository";
+import { databaseMode, runtimeRepositoryFor } from "@/lib/data/repository";
+import { PostgresMessagingRepository } from "@/lib/data/postgres-messaging-repository";
 import { sendingAccessToken } from "@/lib/whatsapp/runtime-account";
 import { listBusinessTemplates } from "@/lib/templates/repository";
 import { authenticationTemplatePayload, chooseWhatsAppOtpSender, type WhatsAppOtpSender, type WhatsAppOtpUnavailable } from "./whatsapp-otp-model";
@@ -37,4 +38,10 @@ export async function deliverWhatsAppOtp(sender: WhatsAppOtpSender, phone: strin
     console.error("[WHATSAPP_OTP_SEND_FAILED]", { status: response.status, metaError: typeof result?.error?.code === "number" ? result.error.code : null });
     throw new Error("WHATSAPP_OTP_SEND_FAILED");
   }
+  const messageId = String(result.messages[0].id);
+  console.info("[WHATSAPP_OTP_SENT]", { messageId, status: "sent" });
+  // Message Status shows the send and its delivery receipts; the code itself is never stored.
+  if (["postgres", "dual-write"].includes(databaseMode()))
+    await new PostgresMessagingRepository().storeSignInCodeMessage(sender.businessId, { messageId, phone, template: sender.template.name })
+      .catch(() => console.error("[WHATSAPP_OTP_RECORD_FAILED]", { messageId }));
 }
