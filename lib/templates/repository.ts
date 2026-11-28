@@ -98,6 +98,24 @@ export async function createBusinessTemplate(businessId: string, content: Templa
   return id;
 }
 
+/** Records an Authentication (sign-in code) template already submitted to Meta. The editor never
+ * creates these: Meta fixes their wording, so only the name, language and Meta's id/status are kept. */
+export async function createAuthenticationTemplate(businessId: string, input: { name: string; language: string; metaTemplateId: string; status: TemplateStatus }) {
+  requireStore();
+  const business = await tenantId(businessId);
+  const id = `tpl_${randomUUID().replace(/-/g, "")}`;
+  const body = "{{1}} is your verification code. For your security, do not share this code.";
+  const definition = { name: input.name, language: input.language, category: "authentication", body, examples: ["123456"], buttons: [], header: "", footer: "", id, businessId, status: input.status, submittedAt: new Date().toISOString() };
+  try {
+    await postgresDb().execute(sql`insert into whatsapp_templates (messaging_business_id, legacy_template_id, name, language, category, status, body, meta_template_id, variables, definition, created_at, updated_at)
+      values (${business}, ${id}, ${input.name}, ${input.language}, 'authentication', ${input.status}, ${body}, ${input.metaTemplateId}, ${JSON.stringify({ examples: ["123456"] })}::jsonb, ${JSON.stringify(definition)}::jsonb, now(), now())`);
+  } catch (error) {
+    if (isNameConflict(error)) throw new TemplateNameTakenError();
+    throw error;
+  }
+  return id;
+}
+
 /** Updates content and/or lifecycle fields of one template owned by this business. */
 export async function updateBusinessTemplate(
   businessId: string,

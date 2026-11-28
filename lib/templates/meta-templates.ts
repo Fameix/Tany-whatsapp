@@ -2,7 +2,7 @@ import "server-only";
 import { runtimeRepositoryFor } from "@/lib/data/repository";
 import { accountAccessToken } from "@/lib/whatsapp/credentials";
 import { metaComponents, statusFromMeta, validateTemplate, type TemplateCategory } from "./model";
-import { getBusinessTemplate, updateBusinessTemplate, type BusinessTemplate } from "./repository";
+import { createAuthenticationTemplate, getBusinessTemplate, updateBusinessTemplate, type BusinessTemplate } from "./repository";
 
 export class TemplateSubmissionError extends Error {
   constructor(public code: "NOT_CONNECTED" | "INVALID" | "NOT_SUBMITTABLE" | "META_REJECTED_REQUEST" | "META_UNAVAILABLE" | "NOT_FOUND", message: string) {
@@ -72,6 +72,44 @@ export async function submitTemplateToMeta(businessId: string, id: string): Prom
     category: metaCategory(result.category),
   });
   return (await getBusinessTemplate(businessId, id))!;
+}
+
+/** Meta's standard Authentication template: fixed body with the security line, a code-expiry footer
+ * and a Copy code button. Used for WhatsApp sign-in codes (lib/auth/whatsapp-otp). */
+export function authenticationTemplateComponents(codeExpirationMinutes = 5) {
+  return [
+    { type: "BODY", add_security_recommendation: true },
+    { type: "FOOTER", code_expiration_minutes: codeExpirationMinutes },
+    { type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE", text: "Copy code" }] },
+  ];
+}
+
+/** Submits this business's sign-in code template to its own WABA and records it. */
+export async function submitAuthenticationTemplate(businessId: string, name: string, language: string): Promise<BusinessTemplate> {
+  if (!/^[a-z0-9_]{1,120}$/.test(name)) throw new TemplateSubmissionError("INVALID", "Use lowercase letters, numbers and underscores.");
+  const { wabaId, token } = await metaAccount(businessId);
+  const result = await graph<{ id?: string; status?: string }>(`${encodeURIComponent(wabaId)}/message_templates`, token, {
+    method: "POST",
+    body: { name, language, category: "AUTHENTICATION", components: authenticationTemplateComponents() },
+  });
+  if (!result.id) throw new TemplateSubmissionError("META_UNAVAILABLE", "Meta did not return a template id. Try again.");
+  const id = await createAuthenticationTemplate(businessId, { name, language, metaTemplateId: String(result.id), status: statusFromMeta(result.status) });
+  return (await getBusinessTemplate(businessId, id))!;
+}
+
+/** Why Meta may refuse templates for this business: its WABA's review, verification and health,
+ * read with the business's own token. Identifiers are not returned. */
+export async function wabaTemplateReadiness(businessId: string) {
+  const { wabaId, token } = await metaAccount(businessId);
+  const waba = await graph<{ account_review_status?: string; business_verification_status?: string; ownership_type?: string; health_status?: { can_send_message?: string; entities?: { entity_type?: string; can_send_message?: string; errors?: { error_code?: number; error_description?: string; possible_solution?: string }[] }[] } }>(
+    `${encodeURIComponent(wabaId)}?fields=account_review_status,business_verification_status,ownership_type,health_status`, token, { method: "GET" });
+  return {
+    accountReviewStatus: waba.account_review_status ?? null,
+    businessVerificationStatus: waba.business_verification_status ?? null,
+    ownershipType: waba.ownership_type ?? null,
+    canSendMessage: waba.health_status?.can_send_message ?? null,
+    issues: (waba.health_status?.entities ?? []).flatMap(entity => (entity.errors ?? []).map(error => ({ entity: entity.entity_type ?? null, code: error.error_code ?? null, description: error.error_description ?? null, solution: error.possible_solution ?? null }))),
+  };
 }
 
 /** Reads the review result from Meta. Status changes only ever come from Meta. */
