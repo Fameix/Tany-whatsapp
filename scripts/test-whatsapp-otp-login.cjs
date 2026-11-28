@@ -2,8 +2,8 @@
 // WhatsApp OTP sign-in: the code is sent from the business's own connected number with its approved
 // Authentication template; challenges, limits and sessions are per business + phone; only the code's
 // HMAC is stored; the session is locked to that business. The real SQL runs against the confirmed
-// staging database inside ONE transaction that is always rolled back, on temporary copies of the
-// sign-in tables that shadow the real ones, so staging data is never written (also behind a pooler).
+// staging database inside ONE transaction that is always rolled back (also behind a pooler): on
+// temporary copies of the sign-in tables, or with OTP_TEST_REAL_TABLES=1 on the real migrated tables.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { loadEnvConfig } = require("@next/env");
@@ -60,17 +60,22 @@ async function main() {
     const tables = ["messaging_businesses", "messaging_auth_users", "messaging_auth_user_businesses", "messaging_phone_login_challenges", "messaging_phone_login_sessions"];
     // One outer transaction, rolled back at the end: a connection pooler keeps a transaction on one
     // server session, and nothing persists even if a statement reached a real table.
+    // OTP_TEST_REAL_TABLES=1 (after migration 0010): the real tables and columns, still rolled back.
+    const realTables = process.env.OTP_TEST_REAL_TABLES === "1";
     await client.query("begin");
-    for (const table of tables) {
-      await client.query(`drop table if exists pg_temp.${table}`);
-      await client.query(`create temporary table ${table} (like public.${table} including defaults including indexes) on commit drop`);
+    if (!realTables) {
+      for (const table of tables) {
+        await client.query(`drop table if exists pg_temp.${table}`);
+        await client.query(`create temporary table ${table} (like public.${table} including defaults including indexes) on commit drop`);
+      }
+      await client.query("alter table pg_temp.messaging_phone_login_challenges add column if not exists messaging_business_id uuid");
+      await client.query("alter table pg_temp.messaging_phone_login_sessions add column if not exists tenant_locked boolean not null default false");
     }
-    await client.query("alter table pg_temp.messaging_phone_login_challenges add column if not exists messaging_business_id uuid");
-    await client.query("alter table pg_temp.messaging_phone_login_sessions add column if not exists tenant_locked boolean not null default false");
     for (const table of tables) {
       const where = await client.query("select n.nspname from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.oid=$1::regclass", [table]);
-      assert.match(where.rows[0].nspname, /^pg_temp/, `${table} resolves to the temporary copy`);
+      assert.match(where.rows[0].nspname, realTables ? /^public$/ : /^pg_temp/, `${table} resolves to the ${realTables ? "real table" : "temporary copy"}`);
     }
+    pass(realTables ? "(real migrated tables, one transaction, rolled back)" : "(temporary copies of the tables, one transaction, rolled back)");
     // The service's own transactions become savepoints inside the outer one.
     const savepoints = [];
     let next = 0;
@@ -107,7 +112,9 @@ async function main() {
     const age = (tenant, phone, seconds) => client.query("update messaging_phone_login_challenges set created_at=created_at - make_interval(secs => $3) where messaging_business_id=$1 and phone=$2", [tenant, phone, seconds]);
 
     // Sent from the business's own number; stored only as an HMAC; expires in 5 minutes.
+    const requestedFrom = Date.now();
     await service.requestBusinessLoginOtp("otp-shop-a", both, "203.0.113.9", deps);
+    const requestedTo = Date.now();
     assert.equal(sent.length, 1);
     assert.deepEqual({ ...sent[0], code: undefined }, { businessId: "otp-shop-a", phoneNumberId: "pn-otp-shop-a", phone: both, code: undefined });
     const codeA = lastCode("otp-shop-a", both);
@@ -117,8 +124,8 @@ async function main() {
     assert.ok(!JSON.stringify(stored).includes(codeA), "the code is never stored in plain text");
     assert.match(stored[0].code_hash, /^[0-9a-f]{64}$/);
     assert.notEqual(stored[0].ip_hash, "203.0.113.9", "the client address is hashed");
-    const ttl = new Date(stored[0].expires_at).getTime() - new Date(stored[0].created_at).getTime();
-    assert.ok(ttl > 4.9 * 60_000 && ttl <= 5.1 * 60_000, `expires in about 5 minutes (${ttl}ms)`);
+    const expiresAt = new Date(stored[0].expires_at).getTime();
+    assert.ok(expiresAt >= requestedFrom + 5 * 60_000 && expiresAt <= requestedTo + 5 * 60_000, "expires 5 minutes after the request");
 
     // Resend cooldown.
     await assert.rejects(service.requestBusinessLoginOtp("otp-shop-a", both, "203.0.113.9", deps),
