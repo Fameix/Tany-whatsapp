@@ -47,7 +47,8 @@
     "test:retail-whatsapp": "node --import tsx --conditions=react-server scripts/test-retail-whatsapp.cjs",
     "test:activation-without-whatsapp": "node --import tsx --conditions=react-server scripts/test-activation-without-whatsapp.cjs",
     "test:whatsapp-otp-login": "node --import tsx --conditions=react-server scripts/test-whatsapp-otp-login.cjs",
-    "test:whatsapp-otp-login:real-tables": "node -e \"process.env.OTP_TEST_REAL_TABLES='1';require('child_process').execFileSync(process.execPath,['--import','tsx','--conditions=react-server','scripts/test-whatsapp-otp-login.cjs'],{stdio:'inherit'})\""
+    "test:whatsapp-otp-login:real-tables": "node -e \"process.env.OTP_TEST_REAL_TABLES='1';require('child_process').execFileSync(process.execPath,['--import','tsx','--conditions=react-server','scripts/test-whatsapp-otp-login.cjs'],{stdio:'inherit'})\"",
+    "test:super-admin-whatsapp-setup": "node --import tsx --conditions=react-server scripts/test-super-admin-whatsapp-setup.cjs"
   },
   "dependencies": {
     "@cloudflare/workers-response-store": "^1.1.3",

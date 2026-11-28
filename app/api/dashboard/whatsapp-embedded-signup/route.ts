@@ -4,6 +4,7 @@ import { dashboardSessionCookieName } from "@/lib/admin/dashboard-cookie";
 import { verifyWhatsAppSetupSession, whatsappSetupSessionCookieName, whatsappSetupSessionCookieOptions } from "@/lib/admin/whatsapp-setup-session";
 import { completeEmbeddedSignup } from "@/lib/whatsapp/embedded-signup-service";
 import { SetupError } from "@/lib/whatsapp/setup-service";
+import { productWorkspaceRoot, workspaceProductFor } from "@/lib/admin/product-workspace";
 
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 function sameOrigin(request: NextRequest) {
@@ -13,6 +14,12 @@ function sameOrigin(request: NextRequest) {
       (origin.protocol === "https:" || (origin.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)));
   } catch { return false; }
 }
+/** After setup a Super Admin returns to the product workspace (e.g. Tany Retail); a business to its own page. */
+function setupReturnPath(businessId: string, superAdmin: boolean) {
+  const product = superAdmin ? workspaceProductFor(businessId) : null;
+  return product ? `${productWorkspaceRoot(product)}/whatsapp` : `/business/${encodeURIComponent(businessId)}/whatsapp`;
+}
+
 export async function POST(request: NextRequest) {
   const secret = process.env.MESSAGING_SERVICE_SECRET ?? "";
   const requestedBusinessId = request.nextUrl.searchParams.get("businessId") ?? "";
@@ -26,7 +33,7 @@ export async function POST(request: NextRequest) {
   try {
     const account = await completeEmbeddedSignup(businessId, await request.json());
     console.info("[EMBEDDED_SIGNUP] COMPLETE", { businessId, status: account?.status, redirect: `/business/${encodeURIComponent(businessId)}/whatsapp` });
-    const response = NextResponse.json({ ok: true, dashboardUrl: `/business/${encodeURIComponent(businessId)}/whatsapp`, account: { status: account?.status } }, { headers });
+    const response = NextResponse.json({ ok: true, dashboardUrl: setupReturnPath(businessId, session?.role === "admin"), account: { status: account?.status } }, { headers });
     if (setupContextValid) response.cookies.set(whatsappSetupSessionCookieName, "", { ...whatsappSetupSessionCookieOptions, maxAge: 0 });
     return response;
   } catch (error) {

@@ -16,13 +16,18 @@ import { localStagingWorkspace } from "@/lib/admin/product-test-data";
 import { canViewBusiness } from "@/app/business/_components/business-access";
 import { stagingWorkspaceUrl } from "@/lib/admin/staging-environment";
 import { workspaceRoot } from "@/lib/admin/workspace-root";
+import { productWorkspaceRoot, workspaceProductFor } from "@/lib/admin/product-workspace";
+import { isSuperAdmin } from "@/lib/admin/super-admin-session";
 
 /** Business-scoped Meta Embedded Signup. Business context comes from the route and is
  * authorized only by a matching business session or business setup session. */
 async function BusinessWhatsAppSetup({ params }: { params: Promise<{ businessId: string }> }) {
   await connection();
   const { businessId } = await params;
-  const dashboardHref = `${await workspaceRoot(businessId)}/whatsapp`;
+  // A Super Admin setting up a product workspace's tenant (e.g. Tany Retail → test-retail) returns
+  // to that product's WhatsApp page; everyone else returns to the business's own WhatsApp page.
+  const product = workspaceProductFor(businessId);
+  const dashboardHref = product && (await isSuperAdmin()) ? `${productWorkspaceRoot(product)}/whatsapp` : `${await workspaceRoot(businessId)}/whatsapp`;
   const local = await localStagingWorkspace();
   if (local) {
     if (!(await canViewBusiness(businessId))) return <DashboardAccessRequired />;
